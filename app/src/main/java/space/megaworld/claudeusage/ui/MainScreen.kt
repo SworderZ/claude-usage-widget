@@ -43,6 +43,7 @@ fun MainScreen(
     message: String?,
     onRefresh: () -> Unit,
     onLogin: () -> Unit,
+    onManualLogin: () -> Unit,
     onLogout: () -> Unit,
     onOpenSettings: () -> Unit,
     onDismissMessage: () -> Unit,
@@ -107,6 +108,9 @@ fun MainScreen(
                     state.status == UsageStatus.SESSION_EXPIRED
                 ) {
                     Button(onClick = onLogin, enabled = !busy) { Text(text = "Войти") }
+                    OutlinedButton(onClick = onManualLogin, enabled = !busy) {
+                        Text(text = "Ключ вручную")
+                    }
                 }
                 Button(
                     onClick = onRefresh,

@@ -4,4 +4,5 @@
     <string name="widget_label">Claude Usage</string>
     <string name="widget_description">Расход лимитов подписки Claude</string>
     <string name="login_title">Вход в claude.ai</string>
+    <string name="manual_login_title">Вход по ключу сессии</string>
 </resources>

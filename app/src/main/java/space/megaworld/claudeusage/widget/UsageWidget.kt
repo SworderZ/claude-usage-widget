@@ -40,7 +40,7 @@ import space.megaworld.claudeusage.data.UsageSnapshot
 import space.megaworld.claudeusage.data.UsageState
 import space.megaworld.claudeusage.data.UsageStatus
 import space.megaworld.claudeusage.data.UsageWindow
-import space.megaworld.claudeusage.ui.LoginActivity
+import space.megaworld.claudeusage.ui.MainActivity
 import space.megaworld.claudeusage.ui.UsageFormat
 import space.megaworld.claudeusage.ui.UsageLevel
 
@@ -81,7 +81,9 @@ private fun WidgetBody(state: UsageState) {
     val needsLogin = state.status == UsageStatus.NOT_AUTHORIZED ||
         state.status == UsageStatus.SESSION_EXPIRED
     val tapAction = if (needsLogin) {
-        actionStartActivity<LoginActivity>()
+        // Открываем главный экран, а не сразу WebView: там есть выбор между входом
+        // через WebView и ручным вводом sessionKey.
+        actionStartActivity<MainActivity>()
     } else {
         actionRunCallback<RefreshWidgetAction>()
     }

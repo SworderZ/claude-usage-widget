@@ -28,6 +28,11 @@
             android:exported="false"
             android:label="@string/login_title" />
 
+        <activity
+            android:name=".ui.ManualLoginActivity"
+            android:exported="false"
+            android:label="@string/manual_login_title" />
+
         <receiver
             android:name=".widget.UsageWidgetReceiver"
             android:exported="true"

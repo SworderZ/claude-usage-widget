@@ -9,6 +9,7 @@ import space.megaworld.claudeusage.data.UsageSnapshot
 import space.megaworld.claudeusage.data.parseIsoMillis
 import space.megaworld.claudeusage.data.parseWindows
 import space.megaworld.claudeusage.ui.UsageFormat
+import space.megaworld.claudeusage.ui.normalizeCookie
 import space.megaworld.claudeusage.ui.UsageLevel
 
 class UsageParsingTest {
@@ -76,6 +77,16 @@ class UsageParsingTest {
         assertEquals("43м", UsageFormat.remaining(now + (43 * 60_000L), now))
         assertEquals("< 1м", UsageFormat.remaining(now - 5_000L, now))
         assertNull(UsageFormat.remaining(null, now))
+    }
+
+    @Test
+    fun `normalizes a manually pasted session key`() {
+        assertEquals("sessionKey=sk-ant-01", normalizeCookie("  sk-ant-01 "))
+        assertEquals("sessionKey=sk-ant-01", normalizeCookie("\"sk-ant-01\""))
+        assertEquals(
+            "cf_clearance=xyz; sessionKey=sk-ant-01",
+            normalizeCookie("cf_clearance=xyz; sessionKey=sk-ant-01"),
+        )
     }
 
     @Test

@@ -25,7 +25,14 @@ class MainActivity : ComponentActivity() {
         setContent {
             ClaudeUsageTheme {
                 Surface(modifier = Modifier.fillMaxSize()) {
-                    AppRoot(onOpenLogin = { startActivity(Intent(this, LoginActivity::class.java)) })
+                    AppRoot(
+                        onOpenLogin = {
+                            startActivity(Intent(this, LoginActivity::class.java))
+                        },
+                        onOpenManualLogin = {
+                            startActivity(Intent(this, ManualLoginActivity::class.java))
+                        },
+                    )
                 }
             }
         }
@@ -35,7 +42,7 @@ class MainActivity : ComponentActivity() {
 private enum class Screen { MAIN, SETTINGS }
 
 @Composable
-private fun AppRoot(onOpenLogin: () -> Unit) {
+private fun AppRoot(onOpenLogin: () -> Unit, onOpenManualLogin: () -> Unit) {
     // Экранов два, NavHost ради них тянуть не стоит.
     var screen by remember { mutableStateOf(Screen.MAIN) }
     val viewModel: MainViewModel = viewModel()
@@ -57,6 +64,7 @@ private fun AppRoot(onOpenLogin: () -> Unit) {
             message = message,
             onRefresh = viewModel::refresh,
             onLogin = onOpenLogin,
+            onManualLogin = onOpenManualLogin,
             onLogout = viewModel::logout,
             onOpenSettings = { screen = Screen.SETTINGS },
             onDismissMessage = viewModel::dismissMessage,
