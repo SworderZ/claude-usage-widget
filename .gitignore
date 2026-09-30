@@ -1,0 +1,15 @@
+*.iml
+.gradle/
+.idea/
+.DS_Store
+build/
+/captures
+.externalNativeBuild
+.cxx
+
+# Путь к SDK специфичен для машины
+local.properties
+
+# Артефакты сборки не храним в репозитории, они уходят в релизы
+*.apk
+*.aab
