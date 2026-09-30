@@ -1,9 +1,13 @@
 package space.megaworld.claudeusage.ui
 
+import android.Manifest
 import android.content.Intent
+import android.content.pm.PackageManager
+import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.CircularProgressIndicator
@@ -15,23 +19,27 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import space.megaworld.claudeusage.AppGraph
-import space.megaworld.claudeusage.glyph.GlyphController
-import kotlin.math.roundToInt
+import space.megaworld.claudeusage.glyph.GlyphForegroundService
+import space.megaworld.claudeusage.glyph.GlyphSupport
 
 class MainActivity : ComponentActivity() {
 
-    private val glyph by lazy { GlyphController(this) }
+    private val notificationPermission =
+        registerForActivityResult(ActivityResultContracts.RequestPermission()) { /* см. ниже */ }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        driveGlyphWhileVisible()
+        followGlyphSetting()
         setContent {
             ClaudeUsageTheme {
                 Surface(modifier = Modifier.fillMaxSize()) {
@@ -49,29 +57,39 @@ class MainActivity : ComponentActivity() {
     }
 
     /**
-     * Glyph SDK разрешает работу только приложению на переднем плане, поэтому полосу
-     * ведёт Activity: сессия открывается на STARTED и закрывается на STOP. Из воркера
-     * это сделать нельзя — так устроен SDK.
+     * Полосу ведёт foreground service, а не Activity: иначе она гасла бы при сворачивании.
+     * Здесь только включаем и выключаем его вслед за настройкой — владелец сессии Glyph
+     * должен быть один.
+     *
+     * Отказ в разрешении на уведомления не критичен: сервис всё равно стартует, просто
+     * уведомление не будет видно в шторке.
      */
-    private fun driveGlyphWhileVisible() {
-        if (!glyph.isSupportedDevice) return
+    private fun followGlyphSetting() {
+        if (!GlyphSupport.isAvailable) return
         lifecycleScope.launch {
             repeatOnLifecycle(Lifecycle.State.STARTED) {
-                glyph.connect()
-                try {
-                    AppGraph.get(this@MainActivity).usageRepository.state.collect { state ->
-                        val fiveHour = state.snapshot?.fiveHour
-                        if (state.glyphEnabled && fiveHour != null) {
-                            glyph.showProgress(fiveHour.utilization.roundToInt())
+                AppGraph.get(this@MainActivity).usageRepository.state
+                    .map { it.glyphEnabled }
+                    .distinctUntilChanged()
+                    .collect { enabled ->
+                        if (enabled) {
+                            ensureNotificationPermission()
+                            GlyphForegroundService.start(this@MainActivity)
                         } else {
-                            glyph.turnOff()
+                            GlyphForegroundService.stop(this@MainActivity)
                         }
                     }
-                } finally {
-                    glyph.disconnect()
-                }
             }
         }
+    }
+
+    private fun ensureNotificationPermission() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return
+        val granted = ContextCompat.checkSelfPermission(
+            this,
+            Manifest.permission.POST_NOTIFICATIONS,
+        ) == PackageManager.PERMISSION_GRANTED
+        if (!granted) notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
     }
 }
 

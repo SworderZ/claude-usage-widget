@@ -167,7 +167,7 @@ private fun GlyphSetting(enabled: Boolean, busy: Boolean, onToggle: (Boolean) ->
             Column(modifier = Modifier.weight(1f)) {
                 Text(text = "Glyph: полоса C", style = MaterialTheme.typography.titleMedium)
                 Text(
-                    text = "Показывать 5-часовое окно на полосе C",
+                    text = "Показывать 5-часовое окно на полосе C, в том числе в фоне",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -177,8 +177,12 @@ private fun GlyphSetting(enabled: Boolean, busy: Boolean, onToggle: (Boolean) ->
         Spacer(modifier = Modifier.height(8.dp))
         Text(
             text = """
-                Glyph SDK работает только пока приложение открыто — полоса гаснет,
-                когда вы сворачиваете приложение.
+                Пока полоса горит, в шторке висит служебное уведомление — без него
+                Android выгрузит индикацию через пару минут.
+
+                Nothing разрешает Glyph только приложению на переднем плане, поэтому
+                работа в свёрнутом виде не гарантирована: если системный сервис откажет,
+                причина будет написана в том же уведомлении.
 
                 С отладочным ключом нужно один раз выполнить с компьютера:
                 adb shell settings put global nt_glyph_interface_debug_enable 1

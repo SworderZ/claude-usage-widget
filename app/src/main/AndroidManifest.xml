@@ -5,6 +5,9 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="com.nothing.ketchum.permission.ENABLE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
     <!--
       Glyph SDK объявляет minSdk 33, приложение живёт с 26. Оставляем 26 и
@@ -48,6 +51,20 @@
             android:name=".ui.ManualLoginActivity"
             android:exported="false"
             android:label="@string/manual_login_title" />
+
+        <!--
+          Foreground service нужен, чтобы полоса не гасла при сворачивании.
+          specialUse: индикация на аппаратном Glyph не попадает ни в один
+          из типовых сценариев Android.
+        -->
+        <service
+            android:name=".glyph.GlyphForegroundService"
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="glyph_usage_indicator" />
+        </service>
 
         <receiver
             android:name=".widget.UsageWidgetReceiver"
