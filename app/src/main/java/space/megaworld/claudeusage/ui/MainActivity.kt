@@ -15,13 +15,23 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.repeatOnLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import kotlinx.coroutines.launch
+import space.megaworld.claudeusage.AppGraph
+import space.megaworld.claudeusage.glyph.GlyphController
+import kotlin.math.roundToInt
 
 class MainActivity : ComponentActivity() {
 
+    private val glyph by lazy { GlyphController(this) }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        driveGlyphWhileVisible()
         setContent {
             ClaudeUsageTheme {
                 Surface(modifier = Modifier.fillMaxSize()) {
@@ -33,6 +43,32 @@ class MainActivity : ComponentActivity() {
                             startActivity(Intent(this, ManualLoginActivity::class.java))
                         },
                     )
+                }
+            }
+        }
+    }
+
+    /**
+     * Glyph SDK разрешает работу только приложению на переднем плане, поэтому полосу
+     * ведёт Activity: сессия открывается на STARTED и закрывается на STOP. Из воркера
+     * это сделать нельзя — так устроен SDK.
+     */
+    private fun driveGlyphWhileVisible() {
+        if (!glyph.isSupportedDevice) return
+        lifecycleScope.launch {
+            repeatOnLifecycle(Lifecycle.State.STARTED) {
+                glyph.connect()
+                try {
+                    AppGraph.get(this@MainActivity).usageRepository.state.collect { state ->
+                        val fiveHour = state.snapshot?.fiveHour
+                        if (state.glyphEnabled && fiveHour != null) {
+                            glyph.showProgress(fiveHour.utilization.roundToInt())
+                        } else {
+                            glyph.turnOff()
+                        }
+                    }
+                } finally {
+                    glyph.disconnect()
                 }
             }
         }
@@ -76,6 +112,7 @@ private fun AppRoot(onOpenLogin: () -> Unit, onOpenManualLogin: () -> Unit) {
             onSelectOrganization = viewModel::selectOrganization,
             onSelectInterval = viewModel::setRefreshInterval,
             onReloadOrganizations = viewModel::reloadOrganizations,
+            onToggleGlyph = viewModel::setGlyphEnabled,
         )
     }
 }

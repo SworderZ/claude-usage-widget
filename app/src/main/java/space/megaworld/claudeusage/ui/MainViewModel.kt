@@ -59,6 +59,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         UsageWidget().updateAll(getApplication())
     }
 
+    fun setGlyphEnabled(enabled: Boolean) = runBusy {
+        graph.usageRepository.setGlyphEnabled(enabled)
+    }
+
     fun setRefreshInterval(minutes: Int) = runBusy {
         graph.usageRepository.setRefreshIntervalMinutes(minutes)
         UsageRefreshWorker.reschedule(getApplication(), minutes)

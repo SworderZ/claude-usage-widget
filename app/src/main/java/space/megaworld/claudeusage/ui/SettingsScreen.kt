@@ -19,6 +19,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
@@ -29,6 +30,7 @@ import androidx.compose.ui.unit.dp
 import space.megaworld.claudeusage.R
 import space.megaworld.claudeusage.data.SettingsStore
 import space.megaworld.claudeusage.data.UsageState
+import space.megaworld.claudeusage.glyph.GlyphSupport
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -39,6 +41,7 @@ fun SettingsScreen(
     onSelectOrganization: (String) -> Unit,
     onSelectInterval: (Int) -> Unit,
     onReloadOrganizations: () -> Unit,
+    onToggleGlyph: (Boolean) -> Unit,
 ) {
     Scaffold(
         topBar = {
@@ -138,6 +141,51 @@ fun SettingsScreen(
                     )
                 }
             }
+
+            // Настройка есть только там, где есть сама полоса.
+            if (GlyphSupport.isAvailable) {
+                Spacer(modifier = Modifier.height(24.dp))
+                HorizontalDivider()
+                Spacer(modifier = Modifier.height(16.dp))
+                GlyphSetting(
+                    enabled = state.glyphEnabled,
+                    busy = busy,
+                    onToggle = onToggleGlyph,
+                )
+            }
         }
+    }
+}
+
+@Composable
+private fun GlyphSetting(enabled: Boolean, busy: Boolean, onToggle: (Boolean) -> Unit) {
+    Column {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(text = "Glyph: полоса C", style = MaterialTheme.typography.titleMedium)
+                Text(
+                    text = "Показывать 5-часовое окно на полосе C",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            Switch(checked = enabled, onCheckedChange = onToggle, enabled = !busy)
+        }
+        Spacer(modifier = Modifier.height(8.dp))
+        Text(
+            text = """
+                Glyph SDK работает только пока приложение открыто — полоса гаснет,
+                когда вы сворачиваете приложение.
+
+                С отладочным ключом нужно один раз выполнить с компьютера:
+                adb shell settings put global nt_glyph_interface_debug_enable 1
+                Разрешение сбрасывается через 48 часов.
+            """.trimIndent(),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
     }
 }

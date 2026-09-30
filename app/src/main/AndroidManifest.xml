@@ -1,8 +1,16 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
 
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="com.nothing.ketchum.permission.ENABLE" />
+
+    <!--
+      Glyph SDK объявляет minSdk 33, приложение живёт с 26. Оставляем 26 и
+      гасим слияние: весь код Glyph вызывается только после проверки модели.
+    -->
+    <uses-sdk tools:overrideLibrary="com.nothing.thirdparty" />
 
     <application
         android:name=".ClaudeUsageApp"
@@ -12,6 +20,14 @@
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
         android:theme="@style/Theme.ClaudeUsage">
+
+        <!--
+          Отладочный ключ Glyph. Работает только вместе с однократной командой
+          adb shell settings put global nt_glyph_interface_debug_enable 1
+          (сбрасывается через 48 часов). Для публикации нужен настоящий ключ
+          от Nothing, либо targetSdk Android 16+, где ключ больше не требуется.
+        -->
+        <meta-data android:name="NothingKey" android:value="test" />
 
         <activity
             android:name=".ui.MainActivity"

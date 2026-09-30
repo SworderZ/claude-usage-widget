@@ -63,6 +63,7 @@ data class UsageState(
     val organizations: List<Organization> = emptyList(),
     val organizationUuid: String? = null,
     val refreshIntervalMinutes: Int = SettingsStore.DEFAULT_INTERVAL_MINUTES,
+    val glyphEnabled: Boolean = false,
 ) {
     val hasData: Boolean get() = snapshot != null && snapshot.windows.isNotEmpty()
     val isStale: Boolean get() = status == UsageStatus.NETWORK_ERROR || status == UsageStatus.SESSION_EXPIRED

@@ -1,6 +1,7 @@
 package space.megaworld.claudeusage.data
 
 import android.content.Context
+import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
@@ -24,6 +25,14 @@ class SettingsStore(private val context: Context) {
 
     val refreshIntervalMinutes: Flow<Int> = context.appDataStore.data.map { prefs ->
         prefs[KEY_INTERVAL]?.takeIf { it in ALLOWED_INTERVALS } ?: DEFAULT_INTERVAL_MINUTES
+    }
+
+    /** Индикация на полосе C Glyph. По умолчанию выключена: нужна и модель, и включённая отладка SDK. */
+    val glyphEnabled: Flow<Boolean> =
+        context.appDataStore.data.map { it[KEY_GLYPH_ENABLED] ?: false }
+
+    suspend fun setGlyphEnabled(enabled: Boolean) {
+        context.appDataStore.edit { it[KEY_GLYPH_ENABLED] = enabled }
     }
 
     suspend fun currentIntervalMinutes(): Int = refreshIntervalMinutes.first()
@@ -60,6 +69,7 @@ class SettingsStore(private val context: Context) {
         private val KEY_ORG_UUID = stringPreferencesKey("organization_uuid")
         private val KEY_ORGS = stringPreferencesKey("organizations")
         private val KEY_INTERVAL = intPreferencesKey("refresh_interval_minutes")
+        private val KEY_GLYPH_ENABLED = booleanPreferencesKey("glyph_enabled")
         private val json = Json { ignoreUnknownKeys = true }
     }
 }

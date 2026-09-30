@@ -43,17 +43,48 @@ export GRADLE_USER_HOME=E:/android-tools/gradle-home
 Когда данные устарели (нет сети или истекла сессия), последние значения показываются
 приглушённо, а в подписи появляется причина.
 
+## Glyph на Nothing Phone (2a)
+
+Полоса C показывает заполнение 5-часового окна. Включается в настройках; пункт виден
+только на Phone (2a) и (2a) Plus.
+
+Используется Glyph Developer Kit (`com.nothing.ketchum`). На Maven его нет, поэтому AAR
+лежит в `app/libs/glyph-matrix-sdk-2.0.aar`, взят из
+[официального репозитория Nothing](https://github.com/Nothing-Developer-Programme/Glyph-Developer-Kit).
+
+**Чтобы полоса заработала, нужно один раз разрешить отладку Glyph с компьютера:**
+
+```
+adb shell settings put global nt_glyph_interface_debug_enable 1
+```
+
+Разрешение сбрасывается через 48 часов — это ограничение SDK для отладочного ключа
+(`NothingKey=test` в манифесте). Для публикации нужен настоящий ключ от Nothing либо
+targetSdk Android 16+, где ключ больше не требуется.
+
+Ограничения SDK, а не этого приложения:
+
+- работает только на устройствах Nothing с Android 14 и новее;
+- **только пока приложение открыто.** Поэтому полосу ведёт `MainActivity`: сессия
+  открывается на `STARTED`, гасится на `STOP`. Фоновой индикации из воркера SDK не
+  разрешает, так что «всегда горящего» индикатора не получится.
+
+AAR объявляет `minSdkVersion 33`, приложение живёт с 26 — конфликт снят через
+`tools:overrideLibrary`, а весь код Glyph вызывается только после проверки модели, так
+что на других телефонах он не трогается.
+
 ## Архитектура
 
 ```
 data/     ApiClient, модели, UsageRepository (сеть + кеш), CredentialStore, SettingsStore
 worker/   UsageRefreshWorker — периодическое и разовое обновление
 widget/   UsageWidget (Glance), UsageWidgetReceiver, RefreshWidgetAction
+glyph/    GlyphController — полоса C на Nothing Phone (2a)
 ui/       MainActivity, MainScreen, SettingsScreen, LoginActivity, форматирование
 ```
 
-Слой данных не зависит от Compose/Glance: тот же `UsageRepository` позже сможет кормить
-индикацию Glyph Interface на Nothing Phone (2a) без изменений.
+Слой данных не зависит от Compose/Glance и от Glyph: `UsageRepository` кормит и виджет,
+и полосу, ничего о них не зная.
 
 DI ручной — `AppGraph`, ленивый синглтон. Hilt/Retrofit намеренно не используются.
 

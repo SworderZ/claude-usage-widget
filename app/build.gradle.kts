@@ -15,8 +15,8 @@ android {
         applicationId = "space.megaworld.claudeusage"
         minSdk = 26
         targetSdk = 35
-        versionCode = 3
-        versionName = "0.1.2"
+        versionCode = 4
+        versionName = "0.2.0"
     }
 
     buildTypes {
@@ -74,6 +74,10 @@ dependencies {
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.okhttp)
     implementation(libs.tink.android)
+
+    // Glyph Developer Kit от Nothing: на Maven его нет, AAR лежит рядом.
+    // Источник: https://github.com/Nothing-Developer-Programme/Glyph-Developer-Kit
+    implementation(files("libs/glyph-matrix-sdk-2.0.aar"))
 
     testImplementation(libs.junit)
     testImplementation(libs.kotlinx.coroutines.test)

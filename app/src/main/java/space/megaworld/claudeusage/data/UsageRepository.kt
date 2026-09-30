@@ -57,6 +57,9 @@ class UsageRepository(
             organizationUuid = organizationUuid,
             refreshIntervalMinutes = interval,
         )
+    // combine с типами ограничен пятью потоками, шестой подмешиваем отдельно.
+    }.combine(settingsStore.glyphEnabled) { state, glyphEnabled ->
+        state.copy(glyphEnabled = glyphEnabled)
     }
 
     suspend fun currentState(): UsageState = state.first()
@@ -171,6 +174,10 @@ class UsageRepository(
 
     suspend fun setRefreshIntervalMinutes(minutes: Int) {
         settingsStore.setRefreshIntervalMinutes(minutes)
+    }
+
+    suspend fun setGlyphEnabled(enabled: Boolean) {
+        settingsStore.setGlyphEnabled(enabled)
     }
 
     private suspend fun writeStatus(status: UsageStatus, error: String?) {
