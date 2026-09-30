@@ -35,6 +35,16 @@ class SettingsStore(private val context: Context) {
         context.appDataStore.edit { it[KEY_GLYPH_ENABLED] = enabled }
     }
 
+    val glyphRenderMode: Flow<GlyphRenderMode> = context.appDataStore.data.map { prefs ->
+        prefs[KEY_GLYPH_MODE]
+            ?.let { raw -> runCatching { GlyphRenderMode.valueOf(raw) }.getOrNull() }
+            ?: GlyphRenderMode.PROGRESS
+    }
+
+    suspend fun setGlyphRenderMode(mode: GlyphRenderMode) {
+        context.appDataStore.edit { it[KEY_GLYPH_MODE] = mode.name }
+    }
+
     suspend fun currentIntervalMinutes(): Int = refreshIntervalMinutes.first()
 
     suspend fun setOrganizationUuid(uuid: String?) {
@@ -70,6 +80,7 @@ class SettingsStore(private val context: Context) {
         private val KEY_ORGS = stringPreferencesKey("organizations")
         private val KEY_INTERVAL = intPreferencesKey("refresh_interval_minutes")
         private val KEY_GLYPH_ENABLED = booleanPreferencesKey("glyph_enabled")
+        private val KEY_GLYPH_MODE = stringPreferencesKey("glyph_render_mode")
         private val json = Json { ignoreUnknownKeys = true }
     }
 }

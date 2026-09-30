@@ -55,9 +55,11 @@ class GlyphForegroundService : Service() {
         if (collectJob == null) {
             collectJob = scope.launch {
                 AppGraph.get(applicationContext).usageRepository.state
-                    .map { it.glyphEnabled to it.snapshot?.fiveHour?.utilization }
+                    .map {
+                        Triple(it.glyphEnabled, it.snapshot?.fiveHour?.utilization, it.glyphRenderMode)
+                    }
                     .distinctUntilChanged()
-                    .collect { (enabled, utilization) ->
+                    .collect { (enabled, utilization, mode) ->
                         if (!enabled) {
                             stopSelf()
                             return@collect
@@ -67,11 +69,15 @@ class GlyphForegroundService : Service() {
                             notify(buildNotification("Нет данных о лимите"))
                         } else {
                             val percent = utilization.roundToInt()
-                            glyph.showProgress(percent)
+                            glyph.showProgress(percent, mode)
                             val error = glyph.lastError
                             notify(
                                 buildNotification(
-                                    if (error == null) "5-часовое окно: $percent%" else error
+                                    if (error == null) {
+                                        "5-часовое окно: $percent% · ${mode.label}"
+                                    } else {
+                                        error
+                                    }
                                 )
                             )
                         }

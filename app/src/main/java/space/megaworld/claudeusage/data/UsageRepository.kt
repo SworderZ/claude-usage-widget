@@ -60,6 +60,8 @@ class UsageRepository(
     // combine с типами ограничен пятью потоками, шестой подмешиваем отдельно.
     }.combine(settingsStore.glyphEnabled) { state, glyphEnabled ->
         state.copy(glyphEnabled = glyphEnabled)
+    }.combine(settingsStore.glyphRenderMode) { state, mode ->
+        state.copy(glyphRenderMode = mode)
     }
 
     suspend fun currentState(): UsageState = state.first()
@@ -178,6 +180,10 @@ class UsageRepository(
 
     suspend fun setGlyphEnabled(enabled: Boolean) {
         settingsStore.setGlyphEnabled(enabled)
+    }
+
+    suspend fun setGlyphRenderMode(mode: GlyphRenderMode) {
+        settingsStore.setGlyphRenderMode(mode)
     }
 
     private suspend fun writeStatus(status: UsageStatus, error: String?) {

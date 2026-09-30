@@ -13,6 +13,7 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import space.megaworld.claudeusage.AppGraph
 import space.megaworld.claudeusage.data.ApiResult
+import space.megaworld.claudeusage.data.GlyphRenderMode
 import space.megaworld.claudeusage.data.RefreshResult
 import space.megaworld.claudeusage.data.UsageState
 import space.megaworld.claudeusage.widget.UsageWidget
@@ -61,6 +62,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun setGlyphEnabled(enabled: Boolean) = runBusy {
         graph.usageRepository.setGlyphEnabled(enabled)
+    }
+
+    fun setGlyphRenderMode(mode: GlyphRenderMode) = runBusy {
+        graph.usageRepository.setGlyphRenderMode(mode)
     }
 
     fun setRefreshInterval(minutes: Int) = runBusy {

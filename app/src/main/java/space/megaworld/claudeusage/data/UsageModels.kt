@@ -37,6 +37,28 @@ data class UsageSnapshot(
     }
 }
 
+/**
+ * Как рисовать заполнение полосы C. Документация обещает прогресс «на C1/D1», но
+ * Phone (2a) описан в ней отдельной таблицей, поэтому вариант выбирается опытным путём.
+ */
+enum class GlyphRenderMode {
+    /** displayProgress SDK, направление по умолчанию. */
+    PROGRESS,
+
+    /** То же, но с флагом reverse — если заливка идёт не с той стороны. */
+    PROGRESS_REVERSED,
+
+    /** Зажигаем C_1..C_24 сами: обход на случай, если displayProgress лёг криво. */
+    SEGMENTS;
+
+    val label: String
+        get() = when (this) {
+            PROGRESS -> "Прогресс SDK"
+            PROGRESS_REVERSED -> "Прогресс SDK, наоборот"
+            SEGMENTS -> "Сегменты вручную"
+        }
+}
+
 /** Статус последней попытки обновления — из него виджет выбирает, что рисовать. */
 enum class UsageStatus {
     /** Ни разу не логинились (нет cookie). */
@@ -64,6 +86,7 @@ data class UsageState(
     val organizationUuid: String? = null,
     val refreshIntervalMinutes: Int = SettingsStore.DEFAULT_INTERVAL_MINUTES,
     val glyphEnabled: Boolean = false,
+    val glyphRenderMode: GlyphRenderMode = GlyphRenderMode.PROGRESS,
 ) {
     val hasData: Boolean get() = snapshot != null && snapshot.windows.isNotEmpty()
     val isStale: Boolean get() = status == UsageStatus.NETWORK_ERROR || status == UsageStatus.SESSION_EXPIRED

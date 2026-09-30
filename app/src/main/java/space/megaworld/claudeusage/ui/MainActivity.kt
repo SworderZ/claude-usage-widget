@@ -131,6 +131,7 @@ private fun AppRoot(onOpenLogin: () -> Unit, onOpenManualLogin: () -> Unit) {
             onSelectInterval = viewModel::setRefreshInterval,
             onReloadOrganizations = viewModel::reloadOrganizations,
             onToggleGlyph = viewModel::setGlyphEnabled,
+            onSelectGlyphMode = viewModel::setGlyphRenderMode,
         )
     }
 }

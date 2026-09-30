@@ -7,6 +7,8 @@ import com.nothing.ketchum.Common
 import com.nothing.ketchum.Glyph
 import com.nothing.ketchum.GlyphException
 import com.nothing.ketchum.GlyphManager
+import space.megaworld.claudeusage.data.GlyphRenderMode
+import kotlin.math.roundToInt
 
 /**
  * Полоса C на Nothing Phone (2a) как индикатор 5-часового окна лимита.
@@ -31,6 +33,8 @@ class GlyphController(context: Context) {
 
     /** Прогресс, пришедший до готовности сессии: покажем, как только она откроется. */
     private var pendingProgress: Int? = null
+    private var pendingMode: GlyphRenderMode = GlyphRenderMode.PROGRESS
+    private var lastMode: GlyphRenderMode? = null
 
     /** Последняя ошибка — чтобы UI мог объяснить, почему полоса не горит. */
     @Volatile var lastError: String? = null
@@ -55,7 +59,7 @@ class GlyphController(context: Context) {
                 gm.openSession()
                 sessionOpen = true
                 lastError = null
-                pendingProgress?.let { showProgress(it) }
+                pendingProgress?.let { showProgress(it, pendingMode) }
             } catch (e: GlyphException) {
                 sessionOpen = false
                 lastError = "Не удалось открыть сессию: ${e.message}"
@@ -99,22 +103,61 @@ class GlyphController(context: Context) {
     }
 
     /** [percent] 0..100 — заполнение полосы C. */
-    fun showProgress(percent: Int) {
+    fun showProgress(percent: Int, mode: GlyphRenderMode = GlyphRenderMode.PROGRESS) {
         val clamped = percent.coerceIn(0, 100)
         val gm = manager
         if (gm == null || !sessionOpen) {
             pendingProgress = clamped
+            pendingMode = mode
             return
         }
         pendingProgress = null
+        // Режимы используют разные механизмы SDK, поэтому перед сменой гасим прошлый кадр.
+        if (mode != lastMode) {
+            runCatching { gm.turnOff() }
+            lastMode = mode
+        }
         try {
-            val frame = gm.glyphFrameBuilder.buildChannelC().build()
-            gm.displayProgress(frame, clamped)
+            when (mode) {
+                GlyphRenderMode.PROGRESS ->
+                    gm.displayProgress(gm.glyphFrameBuilder.buildChannelC().build(), clamped)
+                GlyphRenderMode.PROGRESS_REVERSED ->
+                    gm.displayProgress(gm.glyphFrameBuilder.buildChannelC().build(), clamped, true)
+                GlyphRenderMode.SEGMENTS -> showSegments(gm, clamped)
+            }
+            lastError = null
         } catch (e: GlyphException) {
             lastError = "Не удалось показать прогресс: ${e.message}"
             Log.w(TAG, "displayProgress failed", e)
         }
     }
+
+    /**
+     * Ручная отрисовка: зажигаем первые N из 24 сегментов полосы C.
+     * Нужна на случай, если displayProgress на (2a) ложится не так, как обещает документация.
+     */
+    private fun showSegments(gm: GlyphManager, percent: Int) {
+        val lit = (percent * SEGMENT_COUNT / 100.0).roundToInt().coerceIn(0, SEGMENT_COUNT)
+        if (lit == 0) {
+            gm.turnOff()
+            return
+        }
+        val builder = gm.glyphFrameBuilder
+        segmentCodes().take(lit).forEach { builder.buildChannel(it) }
+        gm.toggle(builder.build())
+    }
+
+    /** C_1 внизу, C_24 наверху — порядок из документации Nothing для Phone (2a). */
+    private fun segmentCodes(): List<Int> = listOf(
+        Glyph.Code_23111.C_1, Glyph.Code_23111.C_2, Glyph.Code_23111.C_3,
+        Glyph.Code_23111.C_4, Glyph.Code_23111.C_5, Glyph.Code_23111.C_6,
+        Glyph.Code_23111.C_7, Glyph.Code_23111.C_8, Glyph.Code_23111.C_9,
+        Glyph.Code_23111.C_10, Glyph.Code_23111.C_11, Glyph.Code_23111.C_12,
+        Glyph.Code_23111.C_13, Glyph.Code_23111.C_14, Glyph.Code_23111.C_15,
+        Glyph.Code_23111.C_16, Glyph.Code_23111.C_17, Glyph.Code_23111.C_18,
+        Glyph.Code_23111.C_19, Glyph.Code_23111.C_20, Glyph.Code_23111.C_21,
+        Glyph.Code_23111.C_22, Glyph.Code_23111.C_23, Glyph.Code_23111.C_24,
+    )
 
     fun turnOff() {
         pendingProgress = null
@@ -127,6 +170,7 @@ class GlyphController(context: Context) {
 
     private companion object {
         const val TAG = "GlyphController"
+        const val SEGMENT_COUNT = 24
     }
 }
 

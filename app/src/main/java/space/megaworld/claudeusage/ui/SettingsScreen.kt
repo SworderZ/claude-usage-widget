@@ -29,6 +29,7 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
 import space.megaworld.claudeusage.R
 import space.megaworld.claudeusage.data.SettingsStore
+import space.megaworld.claudeusage.data.GlyphRenderMode
 import space.megaworld.claudeusage.data.UsageState
 import space.megaworld.claudeusage.glyph.GlyphSupport
 
@@ -42,6 +43,7 @@ fun SettingsScreen(
     onSelectInterval: (Int) -> Unit,
     onReloadOrganizations: () -> Unit,
     onToggleGlyph: (Boolean) -> Unit,
+    onSelectGlyphMode: (GlyphRenderMode) -> Unit,
 ) {
     Scaffold(
         topBar = {
@@ -149,8 +151,10 @@ fun SettingsScreen(
                 Spacer(modifier = Modifier.height(16.dp))
                 GlyphSetting(
                     enabled = state.glyphEnabled,
+                    mode = state.glyphRenderMode,
                     busy = busy,
                     onToggle = onToggleGlyph,
+                    onSelectMode = onSelectGlyphMode,
                 )
             }
         }
@@ -158,7 +162,13 @@ fun SettingsScreen(
 }
 
 @Composable
-private fun GlyphSetting(enabled: Boolean, busy: Boolean, onToggle: (Boolean) -> Unit) {
+private fun GlyphSetting(
+    enabled: Boolean,
+    mode: GlyphRenderMode,
+    busy: Boolean,
+    onToggle: (Boolean) -> Unit,
+    onSelectMode: (GlyphRenderMode) -> Unit,
+) {
     Column {
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -174,6 +184,40 @@ private fun GlyphSetting(enabled: Boolean, busy: Boolean, onToggle: (Boolean) ->
             }
             Switch(checked = enabled, onCheckedChange = onToggle, enabled = !busy)
         }
+
+        // Как именно полоса заполняется, зависит от прошивки — вариант подбирается глазами.
+        if (enabled) {
+            Spacer(modifier = Modifier.height(12.dp))
+            Text(text = "Отрисовка полосы", style = MaterialTheme.typography.titleSmall)
+            Text(
+                text = "Если заливка идёт не с той стороны или выглядит неправильно, " +
+                    "переключите вариант и посмотрите на полосу.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Spacer(modifier = Modifier.height(4.dp))
+            GlyphRenderMode.entries.forEach { option ->
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable(enabled = !busy) { onSelectMode(option) }
+                        .padding(vertical = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    RadioButton(
+                        selected = option == mode,
+                        onClick = { onSelectMode(option) },
+                        enabled = !busy,
+                    )
+                    Text(
+                        text = option.label,
+                        style = MaterialTheme.typography.bodyLarge,
+                        modifier = Modifier.padding(start = 8.dp),
+                    )
+                }
+            }
+        }
+
         Spacer(modifier = Modifier.height(8.dp))
         Text(
             text = """
