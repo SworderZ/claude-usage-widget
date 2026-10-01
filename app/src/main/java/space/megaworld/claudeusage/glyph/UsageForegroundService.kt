@@ -45,6 +45,9 @@ class UsageForegroundService : Service() {
     private var started = false
     private var glyphConnected = false
     private var lastInterval = SettingsStore.DEFAULT_INTERVAL_MINUTES
+
+    /** Последнее известное состояние: из него строится текст уведомления. */
+    private var lastState: UsageState? = null
     private val jobs = mutableListOf<Job>()
 
     override fun onBind(intent: Intent?): IBinder? = null
@@ -59,7 +62,9 @@ class UsageForegroundService : Service() {
             stopSelf()
             return START_NOT_STICKY
         }
-        startForegroundCompat(buildNotification("Запуск…"))
+        // Текст берём из последнего известного состояния: «Запуск…» на каждый
+        // onStartCommand затирал бы живой статус при каждом тике будильника.
+        startForegroundCompat(buildNotification(lastState?.let(::statusText) ?: "Запуск…"))
         if (!started) {
             started = true
             observeState()
@@ -80,7 +85,16 @@ class UsageForegroundService : Service() {
     /** Следит за настройками: ведёт полосу и решает, нужна ли служба вообще. */
     private fun observeState() {
         jobs += scope.launch {
-            AppGraph.get(applicationContext).usageRepository.state.collect { state ->
+            val repository = AppGraph.get(applicationContext).usageRepository
+            // Сразу показываем настоящий текст, не дожидаясь первого события потока:
+            // иначе при любой заминке в нём уведомление висит с «Запуск…».
+            runCatching {
+                lastState = repository.currentState()
+                notify(buildNotification(statusText(repository.currentState())))
+            }
+            repository.state.collect { state ->
+                lastState = state
+
                 val wantsGlyph = state.glyphEnabled && glyph.isSupportedDevice
                 val wantsFastRefresh = state.refreshIntervalMinutes < WORKMANAGER_FLOOR_MINUTES
                 if (!wantsGlyph && !wantsFastRefresh) {
@@ -90,36 +104,51 @@ class UsageForegroundService : Service() {
                     return@collect
                 }
 
-                if (wantsGlyph) {
-                    if (!glyphConnected) {
-                        glyph.connect()
-                        glyphConnected = true
-                    }
-                    val utilization = state.snapshot?.fiveHour?.utilization
-                    if (utilization == null) {
-                        glyph.turnOff()
-                    } else {
-                        glyph.showProgress(utilization.roundToInt(), state.glyphRenderMode)
-                    }
-                } else if (glyphConnected) {
-                    glyph.disconnect()
-                    glyphConnected = false
-                }
+                // Работа с Glyph отделена от уведомления: если SDK бросит что-то
+                // неожиданное, сборщик состояния не должен умереть вместе с ним,
+                // иначе уведомление навсегда застынет на последнем тексте.
+                val glyphError = runCatching { driveGlyph(state, wantsGlyph) }
+                    .exceptionOrNull()
+                    ?.let { "Glyph: ${it.message ?: it::class.java.simpleName}" }
 
                 if (state.refreshIntervalMinutes != lastInterval) {
                     lastInterval = state.refreshIntervalMinutes
                     scheduleNextTick()
                 }
-                notify(buildNotification(statusText(state)))
+                notify(buildNotification(glyphError ?: statusText(state)))
             }
+        }
+    }
+
+    private fun driveGlyph(state: UsageState, wantsGlyph: Boolean) {
+        if (wantsGlyph) {
+            if (!glyphConnected) {
+                glyph.connect()
+                glyphConnected = true
+            }
+            val utilization = state.snapshot?.fiveHour?.utilization
+            if (utilization == null) {
+                glyph.turnOff()
+            } else {
+                glyph.showProgress(utilization.roundToInt(), state.glyphRenderMode)
+            }
+        } else if (glyphConnected) {
+            glyph.disconnect()
+            glyphConnected = false
         }
     }
 
     /** Один тик по будильнику: обновиться, перерисовать виджет и завести следующий. */
     private fun runTick() {
         jobs += scope.launch {
-            AppGraph.get(applicationContext).usageRepository.refresh()
-            UsageWidget().updateAll(applicationContext)
+            val graph = AppGraph.get(applicationContext)
+            runCatching { graph.usageRepository.refresh() }
+            runCatching { UsageWidget().updateAll(applicationContext) }
+            // Состояние могло не измениться (например, сервер вернул те же цифры),
+            // тогда сборщик молчит — обновляем текст сами, чтобы по нему было видно,
+            // что тик действительно произошёл.
+            runCatching { lastState = graph.usageRepository.currentState() }
+            notify(buildNotification(lastState?.let(::statusText) ?: "Обновление…"))
             scheduleNextTick()
         }
     }
