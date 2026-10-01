@@ -8,6 +8,15 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!--
+      Точный будильник: без него Doze прореживает обновление до 9-15 минут.
+      ProtectedPermissions подавлен намеренно: уровень у разрешения
+      signature|privileged|appop, обычное приложение его объявляет, а выдаёт
+      пользователь вручную в «Будильники и напоминания». Lint этого не различает.
+    -->
+    <uses-permission
+        android:name="android.permission.SCHEDULE_EXACT_ALARM"
+        tools:ignore="ProtectedPermissions" />
 
     <!--
       Glyph SDK объявляет minSdk 33, приложение живёт с 26. Оставляем 26 и

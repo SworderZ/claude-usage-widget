@@ -1,5 +1,6 @@
 package space.megaworld.claudeusage.glyph
 
+import android.app.AlarmManager
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -16,16 +17,12 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.flow.collectLatest
-import kotlinx.coroutines.flow.distinctUntilChanged
-import kotlinx.coroutines.flow.map
-import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import space.megaworld.claudeusage.AppGraph
 import space.megaworld.claudeusage.R
 import space.megaworld.claudeusage.data.SettingsStore
 import space.megaworld.claudeusage.data.UsageState
+import space.megaworld.claudeusage.ui.UsageFormat
 import space.megaworld.claudeusage.widget.UsageWidget
 import kotlin.math.roundToInt
 
@@ -35,8 +32,7 @@ import kotlin.math.roundToInt
  *
  * Зачем она для обновления: минимум `PeriodicWorkRequest` — пятнадцать минут, короче
  * WorkManager не принимает. Это ограничение WorkManager, а не системы, и foreground
- * service под него не попадает: пока он жив, можно опрашивать сервер хоть каждую минуту,
- * и сеть ему доступна даже в Doze. Платой идёт постоянное уведомление в шторке.
+ * service под него не попадает. Платой идёт постоянное уведомление в шторке.
  *
  * Про Glyph: SDK Nothing разрешает работу «только приложению на переднем плане», но
  * проверку делает системный сервис, а не AAR — в его байткоде её нет. На Phone (2a)
@@ -48,9 +44,8 @@ class UsageForegroundService : Service() {
     private val glyph by lazy { GlyphController(this) }
     private var started = false
     private var glyphConnected = false
-    private var lastState: UsageState? = null
-    private var lastInterval: Int = SettingsStore.DEFAULT_INTERVAL_MINUTES
-    private var jobs: MutableList<Job> = mutableListOf()
+    private var lastInterval = SettingsStore.DEFAULT_INTERVAL_MINUTES
+    private val jobs = mutableListOf<Job>()
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -68,12 +63,13 @@ class UsageForegroundService : Service() {
         if (!started) {
             started = true
             observeState()
-            observeTicker()
         }
+        if (intent?.action == ACTION_TICK) runTick() else scheduleNextTick()
         return START_STICKY
     }
 
     override fun onDestroy() {
+        cancelTick()
         jobs.forEach { it.cancel() }
         jobs.clear()
         scope.cancel()
@@ -85,9 +81,6 @@ class UsageForegroundService : Service() {
     private fun observeState() {
         jobs += scope.launch {
             AppGraph.get(applicationContext).usageRepository.state.collect { state ->
-                lastState = state
-                lastInterval = state.refreshIntervalMinutes
-
                 val wantsGlyph = state.glyphEnabled && glyph.isSupportedDevice
                 val wantsFastRefresh = state.refreshIntervalMinutes < WORKMANAGER_FLOOR_MINUTES
                 if (!wantsGlyph && !wantsFastRefresh) {
@@ -113,41 +106,67 @@ class UsageForegroundService : Service() {
                     glyphConnected = false
                 }
 
+                if (state.refreshIntervalMinutes != lastInterval) {
+                    lastInterval = state.refreshIntervalMinutes
+                    scheduleNextTick()
+                }
                 notify(buildNotification(statusText(state)))
             }
         }
     }
 
-    /**
-     * Тикает обновлением с выбранным интервалом. collectLatest перезапускает цикл при
-     * смене интервала, поэтому отдельного управления джобом не нужно.
-     */
-    private fun observeTicker() {
+    /** Один тик по будильнику: обновиться, перерисовать виджет и завести следующий. */
+    private fun runTick() {
         jobs += scope.launch {
-            AppGraph.get(applicationContext).settingsStore.refreshIntervalMinutes
-                .distinctUntilChanged()
-                .collectLatest { minutes ->
-                    val repository = AppGraph.get(applicationContext).usageRepository
-                    while (isActive) {
-                        delay(minutes.toLong() * 60_000L)
-                        repository.refresh()
-                        UsageWidget().updateAll(applicationContext)
-                    }
-                }
+            AppGraph.get(applicationContext).usageRepository.refresh()
+            UsageWidget().updateAll(applicationContext)
+            scheduleNextTick()
         }
+    }
+
+    /**
+     * Будильник вместо delay(): корутинная задержка висит на Handler и спящий телефон
+     * не будит — в Doze она откладывается, и при выключенном экране обновление просто
+     * не происходит. RTC_WAKEUP будит.
+     *
+     * Точный будильник требует разрешения «Будильники и напоминания» (Android 12+).
+     * Без него остаётся setAndAllowWhileIdle: он работает без разрешения, но в Doze
+     * система прореживает его примерно до одного срабатывания в 9–15 минут, то есть
+     * пятиминутный интервал при спящем экране соблюдаться не будет.
+     */
+    private fun scheduleNextTick() {
+        jobs += scope.launch {
+            val minutes = AppGraph.get(applicationContext).settingsStore.currentIntervalMinutes()
+            val manager = getSystemService(AlarmManager::class.java) ?: return@launch
+            val at = System.currentTimeMillis() + minutes.toLong() * 60_000L
+            val pending = tickIntent(this@UsageForegroundService)
+            val exact = Build.VERSION.SDK_INT < Build.VERSION_CODES.S ||
+                manager.canScheduleExactAlarms()
+            try {
+                if (exact) {
+                    manager.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, at, pending)
+                } else {
+                    manager.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, at, pending)
+                }
+            } catch (e: SecurityException) {
+                manager.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, at, pending)
+            }
+        }
+    }
+
+    private fun cancelTick() {
+        getSystemService(AlarmManager::class.java)?.cancel(tickIntent(this))
     }
 
     private fun statusText(state: UsageState): String {
         glyph.lastError?.let { if (state.glyphEnabled) return it }
         val percent = state.snapshot?.fiveHour?.utilization?.roundToInt()
-        val head = if (percent == null) "Нет данных о лимите" else "5-часовое окно: $percent%"
-        val tail = when {
-            state.refreshIntervalMinutes < WORKMANAGER_FLOOR_MINUTES ->
-                "обновление раз в ${state.refreshIntervalMinutes} мин"
-            state.glyphEnabled -> "полоса Glyph"
-            else -> null
-        }
-        return if (tail == null) head else "$head · $tail"
+        val head = if (percent == null) "Нет данных" else "5ч: $percent%"
+        // Время последнего обновления здесь не для красоты: по нему видно, тикает
+        // ли служба вообще.
+        val updated = UsageFormat.updatedAt(state.snapshot?.fetchedAtMillis ?: 0L)
+        return head + " · обновлено " + updated +
+            " · раз в " + state.refreshIntervalMinutes + " мин"
     }
 
     private fun startForegroundCompat(notification: Notification) {
@@ -163,8 +182,7 @@ class UsageForegroundService : Service() {
     }
 
     private fun notify(notification: Notification) {
-        val manager = getSystemService(NotificationManager::class.java) ?: return
-        manager.notify(NOTIFICATION_ID, notification)
+        getSystemService(NotificationManager::class.java)?.notify(NOTIFICATION_ID, notification)
     }
 
     private fun buildNotification(text: String): Notification {
@@ -201,6 +219,18 @@ class UsageForegroundService : Service() {
         private const val CHANNEL_ID = "glyph_indicator"
         private const val NOTIFICATION_ID = 42
         private const val ACTION_STOP = "space.megaworld.claudeusage.STOP_SERVICE"
+        private const val ACTION_TICK = "space.megaworld.claudeusage.TICK"
+        private const val TICK_REQUEST = 7
+
+        private fun tickIntent(context: Context): PendingIntent {
+            val intent = Intent(context, UsageForegroundService::class.java).setAction(ACTION_TICK)
+            return PendingIntent.getService(
+                context,
+                TICK_REQUEST,
+                intent,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+            )
+        }
 
         /** Нужна ли служба при таких настройках. */
         fun isNeeded(glyphEnabled: Boolean, intervalMinutes: Int): Boolean =
@@ -212,6 +242,13 @@ class UsageForegroundService : Service() {
 
         fun stop(context: Context) {
             context.stopService(Intent(context, UsageForegroundService::class.java))
+        }
+
+        /** Точные будильники на Android 12+ включает пользователь вручную. */
+        fun canScheduleExact(context: Context): Boolean {
+            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) return true
+            val manager = context.getSystemService(AlarmManager::class.java) ?: return false
+            return manager.canScheduleExactAlarms()
         }
     }
 }

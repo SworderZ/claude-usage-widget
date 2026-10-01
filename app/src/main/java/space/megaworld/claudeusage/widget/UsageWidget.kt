@@ -99,14 +99,14 @@ private data class Metrics(
 private fun metricsFor(height: Dp): Metrics = when {
     height >= 230.dp -> Metrics(
         cardPadding = 13.dp, tilePadding = 11.dp, tileBackground = true,
-        header = true, headerIcon = 19.dp, headerFont = 16.sp, headerGap = 10.dp,
+        header = true, headerIcon = 19.dp, headerFont = 16.sp, headerGap = 4.dp,
         tileGap = 9.dp, titleFont = 14.sp, percentFont = 17.sp,
         barHeight = 11.dp, gapTitleBar = 7.dp, gapBarReset = 7.dp,
         resetFont = 12.sp, reset = true,
     )
     height >= 170.dp -> Metrics(
         cardPadding = 11.dp, tilePadding = 9.dp, tileBackground = true,
-        header = true, headerIcon = 16.dp, headerFont = 14.sp, headerGap = 8.dp,
+        header = true, headerIcon = 16.dp, headerFont = 14.sp, headerGap = 3.dp,
         tileGap = 7.dp, titleFont = 13.sp, percentFont = 15.sp,
         barHeight = 9.dp, gapTitleBar = 5.dp, gapBarReset = 5.dp,
         resetFont = 11.sp, reset = true,
@@ -206,14 +206,21 @@ private fun Header(m: Metrics) {
                 maxLines = 1,
             )
         }
-        Image(
-            provider = ImageProvider(R.drawable.ic_refresh),
-            contentDescription = "Обновить",
-            colorFilter = ColorFilter.tint(ColorProvider(TEXT_PRIMARY)),
+        // Отступ задаётся внутри кликабельного Box: он входит в границы вида, поэтому
+        // увеличивает именно область нажатия, а не просто просвет вокруг иконки.
+        Box(
             modifier = GlanceModifier
-                .size(m.headerIcon)
+                .padding(REFRESH_TOUCH_PADDING)
                 .clickable(actionRunCallback<RefreshWidgetAction>()),
-        )
+            contentAlignment = Alignment.Center,
+        ) {
+            Image(
+                provider = ImageProvider(R.drawable.ic_refresh),
+                contentDescription = "Обновить",
+                colorFilter = ColorFilter.tint(ColorProvider(TEXT_PRIMARY)),
+                modifier = GlanceModifier.size(m.headerIcon),
+            )
+        }
     }
 }
 
@@ -416,6 +423,9 @@ private fun fillDrawable(utilization: Double, stale: Boolean): Int = when {
 }
 
 private const val MIN_BAR_WIDTH = 40f
+
+/** Запас вокруг стрелки обновления: сама иконка мелкая, пальцем в неё не попасть. */
+private val REFRESH_TOUCH_PADDING = 8.dp
 
 private val TEXT_PRIMARY = androidx.compose.ui.graphics.Color(0xFFF3F0F8)
 private val TEXT_SECONDARY = androidx.compose.ui.graphics.Color(0xFFA9A1B8)

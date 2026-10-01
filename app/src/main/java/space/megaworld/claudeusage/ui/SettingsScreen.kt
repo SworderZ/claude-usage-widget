@@ -1,5 +1,9 @@
 package space.megaworld.claudeusage.ui
 
+import android.content.Intent
+import android.net.Uri
+import android.os.Build
+import android.provider.Settings
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -11,6 +15,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.Card
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -25,6 +30,7 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
 import space.megaworld.claudeusage.R
@@ -32,6 +38,7 @@ import space.megaworld.claudeusage.data.SettingsStore
 import space.megaworld.claudeusage.data.GlyphRenderMode
 import space.megaworld.claudeusage.data.UsageState
 import space.megaworld.claudeusage.glyph.GlyphSupport
+import space.megaworld.claudeusage.glyph.UsageForegroundService
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -152,6 +159,8 @@ fun SettingsScreen(
                 }
             }
 
+            ExactAlarmNotice(intervalMinutes = state.refreshIntervalMinutes)
+
             // Настройка есть только там, где есть сама полоса.
             if (GlyphSupport.isAvailable) {
                 Spacer(modifier = Modifier.height(24.dp))
@@ -164,6 +173,49 @@ fun SettingsScreen(
                     onToggle = onToggleGlyph,
                     onSelectMode = onSelectGlyphMode,
                 )
+            }
+        }
+    }
+}
+
+/**
+ * Без разрешения на точные будильники система в Doze прореживает их примерно до
+ * одного срабатывания в 9–15 минут, и короткий интервал при спящем экране не
+ * соблюдается. Показываем, только когда это действительно мешает.
+ */
+@Composable
+private fun ExactAlarmNotice(intervalMinutes: Int) {
+    val context = LocalContext.current
+    if (intervalMinutes >= UsageForegroundService.WORKMANAGER_FLOOR_MINUTES) return
+    if (UsageForegroundService.canScheduleExact(context)) return
+
+    Spacer(modifier = Modifier.height(16.dp))
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(modifier = Modifier.padding(12.dp)) {
+            Text(
+                text = "Интервал будет соблюдаться не всегда",
+                style = MaterialTheme.typography.titleSmall,
+            )
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(
+                text = "При выключенном экране Android растягивает обновление примерно " +
+                    "до 9–15 минут. Чтобы интервал соблюдался, разрешите приложению " +
+                    "точные будильники.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+            OutlinedButton(
+                onClick = {
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                        context.startActivity(
+                            Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM)
+                                .setData(Uri.parse("package:" + context.packageName))
+                        )
+                    }
+                },
+            ) {
+                Text(text = "Разрешить")
             }
         }
     }
