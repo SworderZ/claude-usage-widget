@@ -297,9 +297,14 @@ private fun UsageTile(
 }
 
 /**
- * Полосу собираем из двух Box поверх shape-drawable вместо LinearProgressIndicator:
- * только так получаются скруглённые концы и своя палитра. Ширину заливки считаем в dp —
- * Glance не умеет долевые размеры, поэтому и нужен точный размер виджета.
+ * Полоса из трёх слоёв: трек, доля истёкшего времени окна и поверх неё расход.
+ *
+ * Средний слой — главное здесь: если яркая заливка расхода обгоняет его, лимит
+ * кончится раньше, чем окно сбросится. Сравнение видно одним взглядом, без цифр.
+ *
+ * Собрано на Box со своими shape-drawable, а не на LinearProgressIndicator: тому не
+ * задать ни три слоя, ни скруглённые концы. Ширины считаем в dp — Glance не умеет
+ * долевые размеры, поэтому и нужен точный размер виджета.
  */
 @Composable
 private fun ProgressBar(
@@ -310,19 +315,38 @@ private fun ProgressBar(
 ) {
     val inset = (metrics.cardPadding.value + metrics.tilePadding.value) * 2
     val available = (widgetWidth.value - inset).coerceAtLeast(MIN_BAR_WIDTH)
-    val raw = available * UsageFormat.fraction(window.utilization)
-    // Ненулевой расход не должен пропадать: минимум — кружок в высоту полосы.
-    val filled = if (raw > 0f) raw.coerceAtLeast(metrics.barHeight.value) else 0f
+    val minVisible = metrics.barHeight.value
+
+    fun widthFor(fraction: Float): Float {
+        val raw = available * fraction
+        // Ненулевая доля не должна пропадать: минимум — кружок в высоту полосы.
+        return if (raw > 0f) raw.coerceAtLeast(minVisible) else 0f
+    }
+
+    val usedWidth = widthFor(UsageFormat.fraction(window.utilization))
+    val elapsedWidth = UsageFormat.elapsedPercent(window.key, window.resetsAtMillis)
+        ?.let { widthFor(it / 100f) } ?: 0f
+
     Box(
         modifier = GlanceModifier
             .fillMaxWidth()
             .height(metrics.barHeight)
             .background(ImageProvider(R.drawable.widget_bar_track)),
     ) {
-        if (filled > 0f) {
+        if (elapsedWidth > 0f) {
             Box(
                 modifier = GlanceModifier
-                    .width(filled.dp)
+                    .width(elapsedWidth.dp)
+                    .height(metrics.barHeight)
+                    .background(ImageProvider(R.drawable.widget_bar_elapsed)),
+            ) {}
+        }
+        // Расход рисуем последним, чтобы он был виден и когда отстаёт от времени,
+        // и когда обгоняет его.
+        if (usedWidth > 0f) {
+            Box(
+                modifier = GlanceModifier
+                    .width(usedWidth.dp)
                     .height(metrics.barHeight)
                     .background(ImageProvider(fillDrawable(window.utilization, stale))),
             ) {}
@@ -385,7 +409,7 @@ private fun widgetWindows(snapshot: UsageSnapshot): List<UsageWindow> {
 }
 
 private fun fillDrawable(utilization: Double, stale: Boolean): Int = when {
-    stale -> R.drawable.widget_bar_track
+    stale -> R.drawable.widget_bar_fill_stale
     UsageFormat.level(utilization) == UsageLevel.CRITICAL -> R.drawable.widget_bar_fill_critical
     UsageFormat.level(utilization) == UsageLevel.WARNING -> R.drawable.widget_bar_fill_warning
     else -> R.drawable.widget_bar_fill
