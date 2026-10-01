@@ -55,7 +55,10 @@ object UsageFormat {
         return ((elapsed.toDouble() / duration) * 100).roundToInt().coerceIn(0, 100)
     }
 
-    /** «Сброс через 4 ч. 37 мин.» — длинная форма для крупного виджета. */
+    /**
+     * «Сброс через 4 ч. 37 мин.» для близкого сброса и «Сброс ср 22:00» для далёкого:
+     * обратный отсчёт в днях читается хуже, чем конкретный день недели и время.
+     */
     fun resetTextLong(
         resetsAtMillis: Long?,
         nowMillis: Long = System.currentTimeMillis(),
@@ -63,15 +66,24 @@ object UsageFormat {
         if (resetsAtMillis == null) return null
         val deltaMinutes = ((resetsAtMillis - nowMillis).toDouble() / 60_000.0).roundToLong()
         if (deltaMinutes <= 0) return "Сброс вот-вот"
-        val days = deltaMinutes / (24 * 60)
-        val hours = (deltaMinutes % (24 * 60)) / 60
-        val minutes = deltaMinutes % 60
-        val body = when {
-            days > 0 -> "$days д. $hours ч."
-            hours > 0 -> "$hours ч. $minutes мин."
-            else -> "$minutes мин."
+        if (deltaMinutes >= 24 * 60) {
+            val moment = Instant.ofEpochMilli(resetsAtMillis).atZone(ZoneId.systemDefault())
+            return "Сброс ${weekday(moment.dayOfWeek)} ${timeFormatter.format(moment)}"
         }
+        val hours = deltaMinutes / 60
+        val minutes = deltaMinutes % 60
+        val body = if (hours > 0) "$hours ч. $minutes мин." else "$minutes мин."
         return "Сброс через $body"
+    }
+
+    private fun weekday(day: java.time.DayOfWeek): String = when (day) {
+        java.time.DayOfWeek.MONDAY -> "пн"
+        java.time.DayOfWeek.TUESDAY -> "вт"
+        java.time.DayOfWeek.WEDNESDAY -> "ср"
+        java.time.DayOfWeek.THURSDAY -> "чт"
+        java.time.DayOfWeek.FRIDAY -> "пт"
+        java.time.DayOfWeek.SATURDAY -> "сб"
+        java.time.DayOfWeek.SUNDAY -> "вс"
     }
 
     /** Человекочитаемое название окна; незнакомые ключи показываем как есть. */

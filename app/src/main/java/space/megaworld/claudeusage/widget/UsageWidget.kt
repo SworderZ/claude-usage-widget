@@ -91,29 +91,34 @@ private data class Metrics(
     val reset: Boolean,
 )
 
+/**
+ * Пороги с запасом: лаунчер отдаёт виджету меньше места, чем сообщает LocalSize
+ * (свои поля вокруг), поэтому содержимое плитки держим заметно ниже её доли высоты —
+ * иначе снизу обрезается строка сброса.
+ */
 private fun metricsFor(height: Dp): Metrics = when {
-    height >= 200.dp -> Metrics(
-        cardPadding = 14.dp, tilePadding = 12.dp, tileBackground = true,
-        header = true, headerIcon = 20.dp, headerFont = 17.sp, headerGap = 12.dp,
-        tileGap = 10.dp, titleFont = 15.sp, percentFont = 18.sp,
-        barHeight = 14.dp, gapTitleBar = 8.dp, gapBarReset = 8.dp,
-        resetFont = 13.sp, reset = true,
+    height >= 230.dp -> Metrics(
+        cardPadding = 13.dp, tilePadding = 11.dp, tileBackground = true,
+        header = true, headerIcon = 19.dp, headerFont = 16.sp, headerGap = 10.dp,
+        tileGap = 9.dp, titleFont = 14.sp, percentFont = 17.sp,
+        barHeight = 11.dp, gapTitleBar = 7.dp, gapBarReset = 7.dp,
+        resetFont = 12.sp, reset = true,
     )
-    height >= 150.dp -> Metrics(
+    height >= 170.dp -> Metrics(
         cardPadding = 11.dp, tilePadding = 9.dp, tileBackground = true,
-        header = true, headerIcon = 16.dp, headerFont = 14.sp, headerGap = 7.dp,
-        tileGap = 7.dp, titleFont = 13.sp, percentFont = 16.sp,
-        barHeight = 11.dp, gapTitleBar = 5.dp, gapBarReset = 5.dp,
+        header = true, headerIcon = 16.dp, headerFont = 14.sp, headerGap = 8.dp,
+        tileGap = 7.dp, titleFont = 13.sp, percentFont = 15.sp,
+        barHeight = 9.dp, gapTitleBar = 5.dp, gapBarReset = 5.dp,
         resetFont = 11.sp, reset = true,
     )
-    height >= 112.dp -> Metrics(
-        cardPadding = 9.dp, tilePadding = 0.dp, tileBackground = false,
+    height >= 130.dp -> Metrics(
+        cardPadding = 9.dp, tilePadding = 8.dp, tileBackground = true,
         header = false, headerIcon = 0.dp, headerFont = 0.sp, headerGap = 0.dp,
-        tileGap = 8.dp, titleFont = 13.sp, percentFont = 15.sp,
-        barHeight = 10.dp, gapTitleBar = 4.dp, gapBarReset = 4.dp,
+        tileGap = 6.dp, titleFont = 13.sp, percentFont = 15.sp,
+        barHeight = 9.dp, gapTitleBar = 5.dp, gapBarReset = 5.dp,
         resetFont = 11.sp, reset = true,
     )
-    height >= 80.dp -> Metrics(
+    height >= 95.dp -> Metrics(
         cardPadding = 8.dp, tilePadding = 0.dp, tileBackground = false,
         header = false, headerIcon = 0.dp, headerFont = 0.sp, headerGap = 0.dp,
         tileGap = 6.dp, titleFont = 12.sp, percentFont = 14.sp,
@@ -305,14 +310,16 @@ private fun ProgressBar(
 ) {
     val inset = (metrics.cardPadding.value + metrics.tilePadding.value) * 2
     val available = (widgetWidth.value - inset).coerceAtLeast(MIN_BAR_WIDTH)
-    val filled = available * UsageFormat.fraction(window.utilization)
+    val raw = available * UsageFormat.fraction(window.utilization)
+    // Ненулевой расход не должен пропадать: минимум — кружок в высоту полосы.
+    val filled = if (raw > 0f) raw.coerceAtLeast(metrics.barHeight.value) else 0f
     Box(
         modifier = GlanceModifier
             .fillMaxWidth()
             .height(metrics.barHeight)
             .background(ImageProvider(R.drawable.widget_bar_track)),
     ) {
-        if (filled >= 1f) {
+        if (filled > 0f) {
             Box(
                 modifier = GlanceModifier
                     .width(filled.dp)
