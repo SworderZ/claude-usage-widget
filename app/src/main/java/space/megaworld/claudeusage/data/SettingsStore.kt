@@ -72,8 +72,11 @@ class SettingsStore(private val context: Context) {
     }
 
     companion object {
-        /** Минимум WorkManager для периодической работы — 15 минут. */
-        val ALLOWED_INTERVALS = listOf(15, 30, 60)
+        /**
+         * Короче 15 минут WorkManager не умеет — такие интервалы обслуживает
+         * UsageForegroundService, и за них платится постоянным уведомлением.
+         */
+        val ALLOWED_INTERVALS = listOf(5, 10, 15, 30, 60)
         const val DEFAULT_INTERVAL_MINUTES = 30
 
         private val KEY_ORG_UUID = stringPreferencesKey("organization_uuid")

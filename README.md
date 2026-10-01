@@ -67,7 +67,7 @@ targetSdk Android 16+, где ключ больше не требуется.
 - работает только на устройствах Nothing с Android 14 и новее;
 - **в свёрнутом виде работает, вопреки документации.** Nothing пишет «only foreground
   applications», но проверку делает системный сервис Nothing OS, а не сам AAR — в его
-  байткоде её нет. Полосу ведёт foreground service (`GlyphForegroundService`) со
+  байткоде её нет. Полосу ведёт foreground service (`UsageForegroundService`) со
   служебным уведомлением, и этого оказалось достаточно: проверено на Phone (2a)
   2026-09-30, полоса продолжает гореть после сворачивания приложения. На других
   прошивках и моделях поведение может отличаться — если сервис откажет, причина
@@ -88,7 +88,8 @@ AAR объявляет `minSdkVersion 33`, приложение живёт с 26
 data/     ApiClient, модели, UsageRepository (сеть + кеш), CredentialStore, SettingsStore
 worker/   UsageRefreshWorker — периодическое и разовое обновление
 widget/   UsageWidget (Glance), UsageWidgetReceiver, RefreshWidgetAction
-glyph/    GlyphController — полоса C на Nothing Phone (2a)
+glyph/    GlyphController — полоса C на Nothing Phone (2a),
+          UsageForegroundService — фоновая служба: полоса и частое обновление
 ui/       MainActivity, MainScreen, SettingsScreen, LoginActivity, форматирование
 ```
 
@@ -100,8 +101,14 @@ DI ручной — `AppGraph`, ленивый синглтон. Hilt/Retrofit �
 ### Обновление
 
 `PeriodicWorkRequest` с уникальным именем и constraint «есть сеть»; интервал берётся
-из настроек (15/30/60 минут, меньше 15 WorkManager не разрешает). `updatePeriodMillis`
-в `appwidget-provider` равен 0 — системный таймер провайдера не используется.
+из настроек. `updatePeriodMillis` в `appwidget-provider` равен 0 — системный таймер
+провайдера не используется.
+
+Интервалы 5 и 10 минут WorkManager не принимает: его минимум для периодической работы —
+15 минут. Это ограничение WorkManager, а не системы, поэтому короткие интервалы
+обслуживает `UsageForegroundService` — foreground service тикает сам и сохраняет доступ
+к сети даже в Doze. Платой идёт постоянное уведомление и расход батареи. WorkManager при
+этом не отключается и работает на 15 минутах как страховка на случай, если службу убьют.
 Перезагрузку периодическая работа переживает сама: WorkManager подключает свой
 `RescheduleReceiver` на `BOOT_COMPLETED` (видно в merged manifest).
 

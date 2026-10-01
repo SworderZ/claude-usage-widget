@@ -53,12 +53,13 @@
             android:label="@string/manual_login_title" />
 
         <!--
-          Foreground service нужен, чтобы полоса не гасла при сворачивании.
+          Foreground service: держит полосу Glyph и тикает обновлением чаще,
+          чем позволяет WorkManager (его минимум — 15 минут).
           specialUse: индикация на аппаратном Glyph не попадает ни в один
           из типовых сценариев Android.
         -->
         <service
-            android:name=".glyph.GlyphForegroundService"
+            android:name=".glyph.UsageForegroundService"
             android:exported="false"
             android:foregroundServiceType="specialUse">
             <property

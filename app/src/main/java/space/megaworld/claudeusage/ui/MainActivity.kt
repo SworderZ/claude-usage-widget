@@ -29,8 +29,7 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import space.megaworld.claudeusage.AppGraph
-import space.megaworld.claudeusage.glyph.GlyphForegroundService
-import space.megaworld.claudeusage.glyph.GlyphSupport
+import space.megaworld.claudeusage.glyph.UsageForegroundService
 
 class MainActivity : ComponentActivity() {
 
@@ -65,18 +64,17 @@ class MainActivity : ComponentActivity() {
      * уведомление не будет видно в шторке.
      */
     private fun followGlyphSetting() {
-        if (!GlyphSupport.isAvailable) return
         lifecycleScope.launch {
             repeatOnLifecycle(Lifecycle.State.STARTED) {
                 AppGraph.get(this@MainActivity).usageRepository.state
-                    .map { it.glyphEnabled }
+                    .map { UsageForegroundService.isNeeded(it.glyphEnabled, it.refreshIntervalMinutes) }
                     .distinctUntilChanged()
-                    .collect { enabled ->
-                        if (enabled) {
+                    .collect { needed ->
+                        if (needed) {
                             ensureNotificationPermission()
-                            GlyphForegroundService.start(this@MainActivity)
+                            UsageForegroundService.start(this@MainActivity)
                         } else {
-                            GlyphForegroundService.stop(this@MainActivity)
+                            UsageForegroundService.stop(this@MainActivity)
                         }
                     }
             }
