@@ -121,7 +121,7 @@ class GlyphForegroundService : Service() {
         return Notification.Builder(this, CHANNEL_ID)
             .setContentTitle("Claude Usage · Glyph")
             .setContentText(text)
-            .setSmallIcon(R.drawable.ic_settings)
+            .setSmallIcon(R.drawable.ic_notification_claude)
             .setContentIntent(open)
             .setOngoing(true)
             .build()

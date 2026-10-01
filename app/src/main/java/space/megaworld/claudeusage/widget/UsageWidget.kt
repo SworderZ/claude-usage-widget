@@ -5,6 +5,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.glance.ColorFilter
@@ -12,6 +13,7 @@ import androidx.glance.GlanceId
 import androidx.glance.GlanceModifier
 import androidx.glance.Image
 import androidx.glance.ImageProvider
+import androidx.glance.LocalSize
 import androidx.glance.action.actionStartActivity
 import androidx.glance.action.clickable
 import androidx.glance.appwidget.GlanceAppWidget
@@ -34,7 +36,6 @@ import androidx.glance.text.FontWeight
 import androidx.glance.text.Text
 import androidx.glance.text.TextStyle
 import androidx.glance.unit.ColorProvider
-import androidx.glance.LocalSize
 import space.megaworld.claudeusage.AppGraph
 import space.megaworld.claudeusage.R
 import space.megaworld.claudeusage.data.UsageSnapshot
@@ -49,8 +50,8 @@ import space.megaworld.claudeusage.ui.UsageLevel
  * Виджет расхода лимитов. Данные берёт из репозитория (кеш в DataStore) — сам в сеть
  * не ходит, этим занимается UsageRefreshWorker.
  *
- * [SizeMode.Exact] выбран намеренно: ширина полос считается в dp от реального размера
- * виджета, а размер «корзины» из Responsive для этого слишком приблизителен.
+ * [SizeMode.Exact] выбран намеренно: и ширина полос, и набор отступов считаются от
+ * реального размера виджета, а размер «корзины» из Responsive для этого слишком груб.
  */
 class UsageWidget : GlanceAppWidget() {
 
@@ -68,18 +69,78 @@ class UsageWidget : GlanceAppWidget() {
     }
 }
 
+/**
+ * Набор размеров под конкретную высоту виджета. Содержимое фиксированной высоты в
+ * 4x2 не влезает, поэтому вместо одного макета подбираем плотность по месту.
+ */
+private data class Metrics(
+    val cardPadding: Dp,
+    val tilePadding: Dp,
+    val tileBackground: Boolean,
+    val header: Boolean,
+    val headerIcon: Dp,
+    val headerFont: TextUnit,
+    val headerGap: Dp,
+    val tileGap: Dp,
+    val titleFont: TextUnit,
+    val percentFont: TextUnit,
+    val barHeight: Dp,
+    val gapTitleBar: Dp,
+    val gapBarReset: Dp,
+    val resetFont: TextUnit,
+    val reset: Boolean,
+)
+
+private fun metricsFor(height: Dp): Metrics = when {
+    height >= 200.dp -> Metrics(
+        cardPadding = 14.dp, tilePadding = 12.dp, tileBackground = true,
+        header = true, headerIcon = 20.dp, headerFont = 17.sp, headerGap = 12.dp,
+        tileGap = 10.dp, titleFont = 15.sp, percentFont = 18.sp,
+        barHeight = 14.dp, gapTitleBar = 8.dp, gapBarReset = 8.dp,
+        resetFont = 13.sp, reset = true,
+    )
+    height >= 150.dp -> Metrics(
+        cardPadding = 11.dp, tilePadding = 9.dp, tileBackground = true,
+        header = true, headerIcon = 16.dp, headerFont = 14.sp, headerGap = 7.dp,
+        tileGap = 7.dp, titleFont = 13.sp, percentFont = 16.sp,
+        barHeight = 11.dp, gapTitleBar = 5.dp, gapBarReset = 5.dp,
+        resetFont = 11.sp, reset = true,
+    )
+    height >= 112.dp -> Metrics(
+        cardPadding = 9.dp, tilePadding = 0.dp, tileBackground = false,
+        header = false, headerIcon = 0.dp, headerFont = 0.sp, headerGap = 0.dp,
+        tileGap = 8.dp, titleFont = 13.sp, percentFont = 15.sp,
+        barHeight = 10.dp, gapTitleBar = 4.dp, gapBarReset = 4.dp,
+        resetFont = 11.sp, reset = true,
+    )
+    height >= 80.dp -> Metrics(
+        cardPadding = 8.dp, tilePadding = 0.dp, tileBackground = false,
+        header = false, headerIcon = 0.dp, headerFont = 0.sp, headerGap = 0.dp,
+        tileGap = 6.dp, titleFont = 12.sp, percentFont = 14.sp,
+        barHeight = 8.dp, gapTitleBar = 4.dp, gapBarReset = 0.dp,
+        resetFont = 0.sp, reset = false,
+    )
+    else -> Metrics(
+        cardPadding = 8.dp, tilePadding = 0.dp, tileBackground = false,
+        header = false, headerIcon = 0.dp, headerFont = 0.sp, headerGap = 0.dp,
+        tileGap = 4.dp, titleFont = 12.sp, percentFont = 14.sp,
+        barHeight = 0.dp, gapTitleBar = 0.dp, gapBarReset = 0.dp,
+        resetFont = 0.sp, reset = false,
+    )
+}
+
 @Composable
 private fun WidgetBody(state: UsageState) {
+    val size = LocalSize.current
+    val m = metricsFor(size.height)
     val needsLogin = state.status == UsageStatus.NOT_AUTHORIZED ||
         state.status == UsageStatus.SESSION_EXPIRED
-    val size = LocalSize.current
-    val compact = size.height < COMPACT_HEIGHT_THRESHOLD
 
     Column(
         modifier = GlanceModifier
             .fillMaxSize()
             .background(ImageProvider(R.drawable.widget_card_bg))
-            .padding(CARD_PADDING)
+            .padding(m.cardPadding)
             .clickable(
                 if (needsLogin) {
                     actionStartActivity<MainActivity>()
@@ -88,69 +149,82 @@ private fun WidgetBody(state: UsageState) {
                 }
             ),
     ) {
-        if (!compact) {
-            Header()
-            Spacer(modifier = GlanceModifier.height(12.dp))
+        if (m.header) {
+            Header(m)
+            Spacer(modifier = GlanceModifier.height(m.headerGap))
         }
 
         if (state.hasData) {
             val windows = widgetWindows(state.snapshot!!)
             windows.forEachIndexed { index, window ->
-                if (compact) {
-                    CompactRow(window = window, stale = state.isStale)
-                } else {
-                    UsageTile(window = window, stale = state.isStale, widgetWidth = size.width)
-                }
+                // defaultWeight: плитки делят остаток высоты поровну, что бы ни
+                // осталось после шапки — так нижняя не уезжает за край.
+                UsageTile(
+                    window = window,
+                    stale = state.isStale,
+                    metrics = m,
+                    widgetWidth = size.width,
+                    modifier = GlanceModifier.defaultWeight(),
+                )
                 if (index != windows.lastIndex) {
-                    Spacer(modifier = GlanceModifier.height(if (compact) 6.dp else 10.dp))
+                    Spacer(modifier = GlanceModifier.height(m.tileGap))
                 }
-            }
-            if (state.isStale && !compact) {
-                Spacer(modifier = GlanceModifier.height(8.dp))
-                Text(text = staleNote(state), style = secondaryStyle(11.sp))
             }
         } else {
-            Placeholder(state = state, compact = compact)
+            Placeholder(state = state, metrics = m)
         }
     }
 }
 
 @Composable
-private fun Header() {
+private fun Header(m: Metrics) {
     Row(
         modifier = GlanceModifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Image(
-            provider = ImageProvider(R.drawable.ic_claude_mark),
-            contentDescription = null,
-            modifier = GlanceModifier.size(20.dp),
-        )
-        Spacer(modifier = GlanceModifier.width(8.dp))
-        Text(
-            text = "Claude",
-            style = TextStyle(color = ColorProvider(TEXT_PRIMARY), fontSize = 17.sp),
-            modifier = GlanceModifier.defaultWeight(),
-        )
+        // Значок и название — отдельная цель: открывают приложение, а не обновление.
+        Row(
+            modifier = GlanceModifier
+                .defaultWeight()
+                .clickable(actionStartActivity<MainActivity>()),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Image(
+                provider = ImageProvider(R.drawable.ic_claude_mark),
+                contentDescription = "Открыть приложение",
+                modifier = GlanceModifier.size(m.headerIcon),
+            )
+            Spacer(modifier = GlanceModifier.width(8.dp))
+            Text(
+                text = "Claude",
+                style = TextStyle(color = ColorProvider(TEXT_PRIMARY), fontSize = m.headerFont),
+                maxLines = 1,
+            )
+        }
         Image(
             provider = ImageProvider(R.drawable.ic_refresh),
             contentDescription = "Обновить",
             colorFilter = ColorFilter.tint(ColorProvider(TEXT_PRIMARY)),
             modifier = GlanceModifier
-                .size(20.dp)
+                .size(m.headerIcon)
                 .clickable(actionRunCallback<RefreshWidgetAction>()),
         )
     }
 }
 
 @Composable
-private fun UsageTile(window: UsageWindow, stale: Boolean, widgetWidth: Dp) {
-    Column(
-        modifier = GlanceModifier
-            .fillMaxWidth()
-            .background(ImageProvider(R.drawable.widget_tile_bg))
-            .padding(TILE_PADDING),
-    ) {
+private fun UsageTile(
+    window: UsageWindow,
+    stale: Boolean,
+    metrics: Metrics,
+    widgetWidth: Dp,
+    modifier: GlanceModifier = GlanceModifier,
+) {
+    var tile = modifier.fillMaxWidth()
+    if (metrics.tileBackground) {
+        tile = tile.background(ImageProvider(R.drawable.widget_tile_bg)).padding(metrics.tilePadding)
+    }
+    Column(modifier = tile, verticalAlignment = Alignment.CenterVertically) {
         Row(
             modifier = GlanceModifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically,
@@ -159,67 +233,90 @@ private fun UsageTile(window: UsageWindow, stale: Boolean, widgetWidth: Dp) {
                 text = UsageFormat.windowTitle(window.key),
                 style = TextStyle(
                     color = ColorProvider(TEXT_PRIMARY),
-                    fontSize = 15.sp,
+                    fontSize = metrics.titleFont,
                     fontWeight = FontWeight.Bold,
                 ),
                 maxLines = 1,
                 modifier = GlanceModifier.defaultWeight(),
             )
-            Spacer(modifier = GlanceModifier.width(8.dp))
+            Spacer(modifier = GlanceModifier.width(6.dp))
             Text(
                 text = UsageFormat.percent(window.utilization),
                 style = TextStyle(
                     color = ColorProvider(TEXT_PRIMARY),
-                    fontSize = 18.sp,
+                    fontSize = metrics.percentFont,
                     fontWeight = FontWeight.Bold,
                 ),
             )
         }
 
-        Spacer(modifier = GlanceModifier.height(8.dp))
-        ProgressBar(window = window, stale = stale, widgetWidth = widgetWidth)
-        Spacer(modifier = GlanceModifier.height(8.dp))
-
-        Row(
-            modifier = GlanceModifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text(
-                text = UsageFormat.resetTextLong(window.resetsAtMillis) ?: "Время сброса неизвестно",
-                style = secondaryStyle(13.sp),
-                maxLines = 1,
-                modifier = GlanceModifier.defaultWeight(),
+        if (metrics.barHeight > 0.dp) {
+            Spacer(modifier = GlanceModifier.height(metrics.gapTitleBar))
+            ProgressBar(
+                window = window,
+                stale = stale,
+                metrics = metrics,
+                widgetWidth = widgetWidth,
             )
-            // Доля истёкшего времени окна: показывает, обгоняет ли расход часы.
-            UsageFormat.elapsedPercent(window.key, window.resetsAtMillis)?.let { elapsed ->
-                Spacer(modifier = GlanceModifier.width(8.dp))
-                Text(text = "$elapsed%", style = secondaryStyle(13.sp))
+        }
+
+        if (metrics.reset) {
+            Spacer(modifier = GlanceModifier.height(metrics.gapBarReset))
+            Row(
+                modifier = GlanceModifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = UsageFormat.resetTextLong(window.resetsAtMillis) ?: "Сброс неизвестен",
+                    style = TextStyle(
+                        color = ColorProvider(TEXT_SECONDARY),
+                        fontSize = metrics.resetFont,
+                    ),
+                    maxLines = 1,
+                    modifier = GlanceModifier.defaultWeight(),
+                )
+                // Доля истёкшего времени окна: показывает, обгоняет ли расход часы.
+                UsageFormat.elapsedPercent(window.key, window.resetsAtMillis)?.let { elapsed ->
+                    Spacer(modifier = GlanceModifier.width(6.dp))
+                    Text(
+                        text = "$elapsed%",
+                        style = TextStyle(
+                            color = ColorProvider(TEXT_SECONDARY),
+                            fontSize = metrics.resetFont,
+                        ),
+                    )
+                }
             }
         }
     }
 }
 
 /**
- * Полосу собираем из двух Box вместо LinearProgressIndicator: только так получаются
- * скруглённые концы и своя палитра. Ширину заливки считаем в dp — Glance не умеет
- * долевые размеры, поэтому и нужен точный размер виджета.
+ * Полосу собираем из двух Box поверх shape-drawable вместо LinearProgressIndicator:
+ * только так получаются скруглённые концы и своя палитра. Ширину заливки считаем в dp —
+ * Glance не умеет долевые размеры, поэтому и нужен точный размер виджета.
  */
 @Composable
-private fun ProgressBar(window: UsageWindow, stale: Boolean, widgetWidth: Dp) {
-    val available = (widgetWidth.value - (CARD_PADDING.value + TILE_PADDING.value) * 2)
-        .coerceAtLeast(MIN_BAR_WIDTH)
-    val filled = (available * UsageFormat.fraction(window.utilization)).coerceAtLeast(0f)
+private fun ProgressBar(
+    window: UsageWindow,
+    stale: Boolean,
+    metrics: Metrics,
+    widgetWidth: Dp,
+) {
+    val inset = (metrics.cardPadding.value + metrics.tilePadding.value) * 2
+    val available = (widgetWidth.value - inset).coerceAtLeast(MIN_BAR_WIDTH)
+    val filled = available * UsageFormat.fraction(window.utilization)
     Box(
         modifier = GlanceModifier
             .fillMaxWidth()
-            .height(BAR_HEIGHT)
+            .height(metrics.barHeight)
             .background(ImageProvider(R.drawable.widget_bar_track)),
     ) {
         if (filled >= 1f) {
             Box(
                 modifier = GlanceModifier
                     .width(filled.dp)
-                    .height(BAR_HEIGHT)
+                    .height(metrics.barHeight)
                     .background(ImageProvider(fillDrawable(window.utilization, stale))),
             ) {}
         }
@@ -227,29 +324,7 @@ private fun ProgressBar(window: UsageWindow, stale: Boolean, widgetWidth: Dp) {
 }
 
 @Composable
-private fun CompactRow(window: UsageWindow, stale: Boolean) {
-    Row(
-        modifier = GlanceModifier.fillMaxWidth(),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Text(
-            text = UsageFormat.windowLabel(window.key),
-            style = secondaryStyle(13.sp),
-            modifier = GlanceModifier.defaultWeight(),
-        )
-        Text(
-            text = UsageFormat.percent(window.utilization),
-            style = TextStyle(
-                color = ColorProvider(if (stale) TEXT_SECONDARY else TEXT_PRIMARY),
-                fontSize = 16.sp,
-                fontWeight = FontWeight.Bold,
-            ),
-        )
-    }
-}
-
-@Composable
-private fun Placeholder(state: UsageState, compact: Boolean) {
+private fun Placeholder(state: UsageState, metrics: Metrics) {
     val title: String
     val hint: String
     when (state.status) {
@@ -279,32 +354,27 @@ private fun Placeholder(state: UsageState, compact: Boolean) {
             text = title,
             style = TextStyle(
                 color = ColorProvider(TEXT_PRIMARY),
-                fontSize = 15.sp,
+                fontSize = metrics.percentFont,
                 fontWeight = FontWeight.Medium,
             ),
         )
-        if (!compact) {
+        if (metrics.reset) {
             Spacer(modifier = GlanceModifier.height(4.dp))
-            Text(text = hint, style = secondaryStyle(12.sp))
+            Text(
+                text = hint,
+                style = TextStyle(
+                    color = ColorProvider(TEXT_SECONDARY),
+                    fontSize = metrics.resetFont,
+                ),
+            )
         }
     }
 }
-
-private fun secondaryStyle(size: androidx.compose.ui.unit.TextUnit) =
-    TextStyle(color = ColorProvider(TEXT_SECONDARY), fontSize = size)
 
 /** В виджете только 5ч и 7д; остальные окна видны на главном экране приложения. */
 private fun widgetWindows(snapshot: UsageSnapshot): List<UsageWindow> {
     val primary = listOfNotNull(snapshot.fiveHour, snapshot.sevenDay)
     return if (primary.isEmpty()) snapshot.windows.take(2) else primary
-}
-
-private fun staleNote(state: UsageState): String {
-    val updated = UsageFormat.updatedAt(state.snapshot?.fetchedAtMillis ?: 0L)
-    return when (state.status) {
-        UsageStatus.SESSION_EXPIRED -> "Сессия истекла · данные от $updated"
-        else -> "Нет связи · данные от $updated"
-    }
 }
 
 private fun fillDrawable(utilization: Double, stale: Boolean): Int = when {
@@ -314,11 +384,7 @@ private fun fillDrawable(utilization: Double, stale: Boolean): Int = when {
     else -> R.drawable.widget_bar_fill
 }
 
-private val CARD_PADDING = 14.dp
-private val TILE_PADDING = 12.dp
-private val BAR_HEIGHT = 14.dp
 private const val MIN_BAR_WIDTH = 40f
-private val COMPACT_HEIGHT_THRESHOLD = 120.dp
 
 private val TEXT_PRIMARY = androidx.compose.ui.graphics.Color(0xFFF3F0F8)
 private val TEXT_SECONDARY = androidx.compose.ui.graphics.Color(0xFFA9A1B8)
