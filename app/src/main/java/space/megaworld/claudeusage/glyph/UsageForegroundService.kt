@@ -20,6 +20,7 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import space.megaworld.claudeusage.AppGraph
 import space.megaworld.claudeusage.R
+import space.megaworld.claudeusage.data.GlyphLight
 import space.megaworld.claudeusage.data.SettingsStore
 import space.megaworld.claudeusage.data.UsageState
 import space.megaworld.claudeusage.ui.UsageFormat
@@ -42,6 +43,18 @@ class UsageForegroundService : Service() {
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private val glyph by lazy { GlyphController(this) }
+
+    /**
+     * Канал A питается временем, а не данными, поэтому у него свой источник
+     * событий: гашение экрана начинает отсчёт и сразу просит перерисовать кадр.
+     */
+    private val idleTracker by lazy {
+        IdleTracker(this) {
+            renderGlyph()
+            scheduleAmbientTick()
+        }
+    }
+    private var idleTracking = false
     private var started = false
     private var glyphConnected = false
     private var lastInterval = SettingsStore.DEFAULT_INTERVAL_MINUTES
@@ -69,12 +82,25 @@ class UsageForegroundService : Service() {
             started = true
             observeState()
         }
-        if (intent?.action == ACTION_TICK) runTick() else scheduleNextTick()
+        when (intent?.action) {
+            ACTION_TICK -> runTick()
+            // Простой вырос — перерисовываем кадр и заводим следующую проверку.
+            ACTION_AMBIENT_TICK -> {
+                renderGlyph()
+                scheduleAmbientTick()
+            }
+            else -> scheduleNextTick()
+        }
         return START_STICKY
     }
 
     override fun onDestroy() {
         cancelTick()
+        cancelAmbientTick()
+        if (idleTracking) {
+            idleTracker.stop()
+            idleTracking = false
+        }
         jobs.forEach { it.cancel() }
         jobs.clear()
         scope.cancel()
@@ -115,27 +141,67 @@ class UsageForegroundService : Service() {
                     lastInterval = state.refreshIntervalMinutes
                     scheduleNextTick()
                 }
+                scheduleAmbientTick()
                 notify(buildNotification(glyphError ?: statusText(state)))
             }
         }
     }
 
     private fun driveGlyph(state: UsageState, wantsGlyph: Boolean) {
-        if (wantsGlyph) {
-            if (!glyphConnected) {
-                glyph.connect()
-                glyphConnected = true
+        if (!wantsGlyph) {
+            if (glyphConnected) {
+                glyph.disconnect()
+                glyphConnected = false
             }
-            val utilization = state.snapshot?.fiveHour?.utilization
-            if (utilization == null) {
-                glyph.turnOff()
-            } else {
-                glyph.showProgress(utilization.roundToInt(), state.glyphRenderMode)
+            if (idleTracking) {
+                idleTracker.stop()
+                idleTracking = false
             }
-        } else if (glyphConnected) {
-            glyph.disconnect()
-            glyphConnected = false
+            return
         }
+        if (!glyphConnected) {
+            glyph.connect()
+            glyphConnected = true
+        }
+        // Подписку держим вместе с сессией: ловить гашение экрана без Glyph незачем.
+        if (!idleTracking) {
+            idleTracker.start()
+            idleTracking = true
+        }
+        glyph.show(frameFor(state))
+    }
+
+    /**
+     * Кадр по текущему состоянию: полоса C — расход лимита, A — простой телефона,
+     * B — ожидаемый дождь. Выключенные каналы просто остаются погашенными, и тогда
+     * контроллер сам вернётся к родному displayProgress для полосы C.
+     */
+    private fun frameFor(state: UsageState): GlyphController.Request {
+        val ambient = state.ambient
+        return GlyphController.Request(
+            cPercent = state.snapshot?.fiveHour?.utilization?.roundToInt(),
+            mode = state.glyphRenderMode,
+            aLight = if (ambient.idleEnabled) {
+                GlyphLight.forIdle(idleTracker.idleMillis, ambient.idleThresholdMinutes)
+            } else {
+                GlyphLight.OFF
+            },
+            bLight = if (ambient.rainEnabled) {
+                GlyphLight.forRain(state.rainForecast?.probabilityPercent)
+            } else {
+                GlyphLight.OFF
+            },
+        )
+    }
+
+    /**
+     * Перерисовка без нового состояния — для событий, которые меняют не данные, а
+     * время: гашение экрана и собственный тик канала A.
+     */
+    private fun renderGlyph() {
+        val state = lastState ?: return
+        if (!glyphConnected || !state.glyphEnabled) return
+        runCatching { glyph.show(frameFor(state)) }
     }
 
     /** Один тик по будильнику: обновиться, перерисовать виджет и завести следующий. */
@@ -143,6 +209,9 @@ class UsageForegroundService : Service() {
         jobs += scope.launch {
             val graph = AppGraph.get(applicationContext)
             runCatching { graph.usageRepository.refresh() }
+            // Прогноз едет на том же тике, но со своим сроком годности — внутрь
+            // сети он сходит далеко не каждый раз.
+            runCatching { graph.usageRepository.refreshWeatherIfStale() }
             runCatching { UsageWidget().updateAll(applicationContext) }
             // Состояние могло не измениться (например, сервер вернул те же цифры),
             // тогда сборщик молчит — обновляем текст сами, чтобы по нему было видно,
@@ -185,6 +254,42 @@ class UsageForegroundService : Service() {
 
     private fun cancelTick() {
         getSystemService(AlarmManager::class.java)?.cancel(tickIntent(this))
+    }
+
+    /**
+     * Отдельный будильник для канала A: его яркость зависит от того, сколько
+     * телефон лежит, а не от данных, и общий интервал обновления тут не годится —
+     * он может быть и час, и настроен совсем под другое.
+     *
+     * Шаг — четверть порога: ровно столько, чтобы разгорание прошло заметными
+     * ступенями. Будильник неточный и без RTC_WAKEUP: разбудить телефон ради
+     * яркости светодиода незачем, а в Doze система подтянет тик сама, когда
+     * проснётся по другому поводу.
+     */
+    private fun scheduleAmbientTick() {
+        val ambient = lastState?.ambient
+        val wanted = ambient != null &&
+            ambient.idleEnabled &&
+            lastState?.glyphEnabled == true &&
+            glyph.isSupportedDevice
+        if (!wanted) {
+            cancelAmbientTick()
+            return
+        }
+        // Пока экран горит, простоя нет и перерисовывать нечего: следующий кадр
+        // закажет сам IdleTracker, когда экран погаснет.
+        if (idleTracker.idleMillis == 0L) {
+            cancelAmbientTick()
+            return
+        }
+        val manager = getSystemService(AlarmManager::class.java) ?: return
+        val stepMinutes = (ambient.idleThresholdMinutes / 4).coerceAtLeast(MIN_AMBIENT_STEP_MINUTES)
+        val at = System.currentTimeMillis() + stepMinutes.toLong() * 60_000L
+        manager.setAndAllowWhileIdle(AlarmManager.RTC, at, ambientTickIntent(this))
+    }
+
+    private fun cancelAmbientTick() {
+        getSystemService(AlarmManager::class.java)?.cancel(ambientTickIntent(this))
     }
 
     private fun statusText(state: UsageState): String {
@@ -249,7 +354,23 @@ class UsageForegroundService : Service() {
         private const val NOTIFICATION_ID = 42
         private const val ACTION_STOP = "space.megaworld.claudeusage.STOP_SERVICE"
         private const val ACTION_TICK = "space.megaworld.claudeusage.TICK"
+        private const val ACTION_AMBIENT_TICK = "space.megaworld.claudeusage.AMBIENT_TICK"
         private const val TICK_REQUEST = 7
+        private const val AMBIENT_REQUEST = 8
+
+        /** Чаще смысла нет: ступень разгорания столько и длится. */
+        private const val MIN_AMBIENT_STEP_MINUTES = 5
+
+        private fun ambientTickIntent(context: Context): PendingIntent {
+            val intent = Intent(context, UsageForegroundService::class.java)
+                .setAction(ACTION_AMBIENT_TICK)
+            return PendingIntent.getService(
+                context,
+                AMBIENT_REQUEST,
+                intent,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+            )
+        }
 
         private fun tickIntent(context: Context): PendingIntent {
             val intent = Intent(context, UsageForegroundService::class.java).setAction(ACTION_TICK)

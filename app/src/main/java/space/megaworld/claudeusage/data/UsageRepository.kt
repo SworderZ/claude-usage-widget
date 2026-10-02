@@ -22,6 +22,7 @@ class UsageRepository(
     private val credentialStore: CredentialStore,
     private val settingsStore: SettingsStore,
     private val apiClient: ApiClient,
+    private val weatherClient: WeatherClient = WeatherClient(),
 ) {
 
     private val refreshMutex = Mutex()
@@ -62,6 +63,10 @@ class UsageRepository(
         state.copy(glyphEnabled = glyphEnabled)
     }.combine(settingsStore.glyphRenderMode) { state, mode ->
         state.copy(glyphRenderMode = mode)
+    }.combine(settingsStore.ambient) { state, ambient ->
+        state.copy(ambient = ambient)
+    }.combine(settingsStore.rainForecast) { state, forecast ->
+        state.copy(rainForecast = forecast)
     }
 
     suspend fun currentState(): UsageState = state.first()
@@ -186,6 +191,60 @@ class UsageRepository(
         settingsStore.setGlyphRenderMode(mode)
     }
 
+    suspend fun setIdleEnabled(enabled: Boolean) {
+        settingsStore.setIdleEnabled(enabled)
+    }
+
+    suspend fun setIdleThresholdMinutes(minutes: Int) {
+        settingsStore.setIdleThresholdMinutes(minutes)
+    }
+
+    suspend fun setRainEnabled(enabled: Boolean) {
+        settingsStore.setRainEnabled(enabled)
+    }
+
+    /**
+     * Название места → координаты, и сразу первый прогноз, чтобы канал B зажёгся
+     * не дожидаясь следующего тика.
+     */
+    suspend fun selectWeatherPlace(query: String): ApiResult<WeatherPlace> {
+        return when (val result = weatherClient.geocode(query)) {
+            is ApiResult.Success -> {
+                settingsStore.setWeatherPlace(result.value)
+                refreshWeather(result.value)
+                result
+            }
+            ApiResult.Unauthorized -> ApiResult.Failure("Сервис погоды отказал")
+            is ApiResult.Failure -> result
+        }
+    }
+
+    suspend fun clearWeatherPlace() {
+        settingsStore.setWeatherPlace(null)
+    }
+
+    /**
+     * Обновляет прогноз, если прежний устарел.
+     *
+     * Свой срок годности, а не общий интервал обновления: лимиты claude меняются
+     * ежеминутно, а осадки на три часа вперёд — нет, и дёргать чужой бесплатный
+     * сервис каждые пять минут незачем.
+     */
+    suspend fun refreshWeatherIfStale() {
+        val ambient = settingsStore.currentAmbient()
+        val place = ambient.place?.takeIf { ambient.rainEnabled } ?: return
+        val previous = settingsStore.currentRainForecast()
+        val age = System.currentTimeMillis() - (previous?.fetchedAtMillis ?: 0L)
+        if (previous != null && age < WEATHER_TTL_MILLIS) return
+        refreshWeather(place)
+    }
+
+    /** Неудача намеренно тихая: канал B доживёт на прежнем прогнозе. */
+    private suspend fun refreshWeather(place: WeatherPlace) {
+        val result = weatherClient.fetchRain(place)
+        if (result is ApiResult.Success) settingsStore.setRainForecast(result.value)
+    }
+
     private suspend fun writeStatus(status: UsageStatus, error: String?) {
         context.appDataStore.edit { prefs ->
             prefs[KEY_STATUS] = status.name
@@ -203,6 +262,10 @@ class UsageRepository(
         val KEY_SNAPSHOT = stringPreferencesKey("usage_snapshot")
         val KEY_STATUS = stringPreferencesKey("usage_status")
         val KEY_ERROR = stringPreferencesKey("usage_error")
+
+        /** Срок годности прогноза: осадки на три часа вперёд чаще не пересматривают. */
+        const val WEATHER_TTL_MILLIS = 30L * 60_000L
+
         val json = Json { ignoreUnknownKeys = true }
     }
 }

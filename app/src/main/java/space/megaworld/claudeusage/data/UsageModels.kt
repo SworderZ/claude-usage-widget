@@ -87,6 +87,8 @@ data class UsageState(
     val refreshIntervalMinutes: Int = SettingsStore.DEFAULT_INTERVAL_MINUTES,
     val glyphEnabled: Boolean = false,
     val glyphRenderMode: GlyphRenderMode = GlyphRenderMode.PROGRESS,
+    val ambient: AmbientSettings = AmbientSettings(),
+    val rainForecast: RainForecast? = null,
 ) {
     val hasData: Boolean get() = snapshot != null && snapshot.windows.isNotEmpty()
     val isStale: Boolean get() = status == UsageStatus.NETWORK_ERROR || status == UsageStatus.SESSION_EXPIRED

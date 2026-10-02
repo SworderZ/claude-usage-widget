@@ -68,6 +68,31 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         graph.usageRepository.setGlyphRenderMode(mode)
     }
 
+    fun setIdleEnabled(enabled: Boolean) = runBusy {
+        graph.usageRepository.setIdleEnabled(enabled)
+    }
+
+    fun setIdleThresholdMinutes(minutes: Int) = runBusy {
+        graph.usageRepository.setIdleThresholdMinutes(minutes)
+    }
+
+    fun setRainEnabled(enabled: Boolean) = runBusy {
+        graph.usageRepository.setRainEnabled(enabled)
+    }
+
+    /** Геокодер отвечает не всегда — про неудачу пользователю надо сказать. */
+    fun selectWeatherPlace(query: String) = runBusy {
+        when (val result = graph.usageRepository.selectWeatherPlace(query)) {
+            is ApiResult.Success -> _message.value = "Место: " + result.value.name
+            ApiResult.Unauthorized -> _message.value = "Сервис погоды отказал"
+            is ApiResult.Failure -> _message.value = result.message
+        }
+    }
+
+    fun clearWeatherPlace() = runBusy {
+        graph.usageRepository.clearWeatherPlace()
+    }
+
     fun setRefreshInterval(minutes: Int) = runBusy {
         graph.usageRepository.setRefreshIntervalMinutes(minutes)
         UsageRefreshWorker.reschedule(getApplication(), minutes)
