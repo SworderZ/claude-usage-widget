@@ -17,6 +17,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.compose.ui.unit.dp
+import space.megaworld.claudeusage.data.AmbientChannel
+import space.megaworld.claudeusage.data.GlyphChannelMode
 import space.megaworld.claudeusage.data.AmbientSettings
 import space.megaworld.claudeusage.data.GlyphRenderMode
 import space.megaworld.claudeusage.data.RainForecast
@@ -35,10 +37,9 @@ fun GlyphScreen(
     onDismissMessage: () -> Unit,
     onToggleGlyph: (Boolean) -> Unit,
     onSelectGlyphMode: (GlyphRenderMode) -> Unit,
-    onToggleIdle: (Boolean) -> Unit,
-    onTestA: () -> Unit,
+    onSelectChannelMode: (AmbientChannel, GlyphChannelMode) -> Unit,
+    onTestChannel: (AmbientChannel) -> Unit,
     onSelectIdleMinutes: (Int) -> Unit,
-    onToggleRain: (Boolean) -> Unit,
     onSelectPlace: (String) -> Unit,
     onClearPlace: () -> Unit,
 ) {
@@ -74,8 +75,8 @@ fun GlyphScreen(
                 Spacer(Modifier.height(16.dp))
                 AmbientSetting(
                     settings = state.ambient, forecast = state.rainForecast, busy = busy,
-                    onToggleIdle = onToggleIdle, onTestA = onTestA, onSelectIdleMinutes = onSelectIdleMinutes,
-                    onToggleRain = onToggleRain, onSelectPlace = onSelectPlace, onClearPlace = onClearPlace,
+                    onSelectChannelMode = onSelectChannelMode, onTestChannel = onTestChannel,
+                    onSelectIdleMinutes = onSelectIdleMinutes, onSelectPlace = onSelectPlace, onClearPlace = onClearPlace,
                 )
                 Spacer(Modifier.height(20.dp))
                 HorizontalDivider()
@@ -104,144 +105,92 @@ fun GlyphScreen(
     }
 }
 
-/**
- * Короткие каналы A и B.
- *
- * Процент на одиночном канале не покажешь, поэтому каждому досталось состояние:
- * A — сколько выключен экран, B — ждать ли дождя. Отличаются они
- * яркостью, и этого хватает: оба нужны, только чтобы бросить взгляд на лежащий
- * экраном вниз телефон.
- */
+/** Независимый выбор функции A и B; настройки одинаковых функций общие. */
 @Composable
 private fun AmbientSetting(
     settings: AmbientSettings,
     forecast: RainForecast?,
     busy: Boolean,
-    onToggleIdle: (Boolean) -> Unit,
-    onTestA: () -> Unit,
+    onSelectChannelMode: (AmbientChannel, GlyphChannelMode) -> Unit,
+    onTestChannel: (AmbientChannel) -> Unit,
     onSelectIdleMinutes: (Int) -> Unit,
-    onToggleRain: (Boolean) -> Unit,
     onSelectPlace: (String) -> Unit,
     onClearPlace: () -> Unit,
 ) {
-    Column {
-        Text(text = "Каналы A и B", style = MaterialTheme.typography.titleMedium)
-        Spacer(modifier = Modifier.height(4.dp))
-        Text(
-            text = "A — время с выключения экрана. B — вероятность дождя. Положите телефон экраном вниз, чтобы видеть подсветку.",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-
-        Spacer(modifier = Modifier.height(16.dp))
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text(text = "A: экран не включали", style = MaterialTheme.typography.titleSmall)
-                Text(
-                    text = "Загорается слабо после выбранного времени и постепенно становится ярче.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-            Switch(checked = settings.idleEnabled, onCheckedChange = onToggleIdle, enabled = !busy)
-        }
-
-        Spacer(modifier = Modifier.height(8.dp))
-        OutlinedButton(onClick = onTestA, enabled = !busy) { Text("Проверить A · 5 секунд") }
-        Text("Зажигает A на полной яркости и возвращает обычную индикацию. Экран можно оставить включённым.",
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Text("Каналы A и B", style = MaterialTheme.typography.titleMedium)
+        Text("Выберите функцию для каждого канала. Город и время ожидания общие, если функция выбрана на обоих.",
             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-
-        if (settings.idleEnabled) {
-            Spacer(modifier = Modifier.height(8.dp))
-            Card(modifier = Modifier.fillMaxWidth()) {
-                Column(modifier = Modifier.padding(12.dp)) {
-                    Text("Как зажечь A", style = MaterialTheme.typography.titleSmall)
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Text(
-                        "Выберите время ниже, заблокируйте экран и оставьте телефон. " +
-                            "Включение экрана гасит A и сбрасывает отсчёт. Движения телефона не учитываются. " +
-                            "В режиме сна Android может задержать срабатывание.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-            }
-            IdleAlarmNotice()
-            Spacer(modifier = Modifier.height(12.dp))
-            Text(text = "Загорается через", style = MaterialTheme.typography.bodyMedium)
-            AmbientSettings.ALLOWED_IDLE_MINUTES.forEach { minutes ->
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable(enabled = !busy) { onSelectIdleMinutes(minutes) }
-                        .padding(vertical = 6.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    RadioButton(
-                        selected = minutes == settings.idleThresholdMinutes,
-                        onClick = { onSelectIdleMinutes(minutes) },
-                        enabled = !busy,
-                    )
-                    Text(
-                        text = "$minutes мин",
-                        style = MaterialTheme.typography.bodyLarge,
-                        modifier = Modifier.padding(start = 8.dp),
-                    )
-                }
-            }
-        }
-
-        Spacer(modifier = Modifier.height(16.dp))
-        HorizontalDivider()
-        Spacer(modifier = Modifier.height(16.dp))
-
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text(text = "B: ожидается дождь", style = MaterialTheme.typography.titleSmall)
-                Text(
-                    text = "Яркость — вероятность осадков на ближайшие три часа. " +
-                        "Ниже 30% канал погашен.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-            Switch(checked = settings.rainEnabled, onCheckedChange = onToggleRain, enabled = !busy)
-        }
-
-        if (settings.rainEnabled) {
-            Spacer(modifier = Modifier.height(12.dp))
-            PlacePicker(
-                place = settings.place,
-                busy = busy,
-                onSelectPlace = onSelectPlace,
-                onClearPlace = onClearPlace,
+        AmbientChannel.entries.forEach { channel ->
+            ChannelModePicker(
+                channel = channel, selected = settings.modeFor(channel), enabled = !busy,
+                onSelect = { onSelectChannelMode(channel, it) }, onTest = { onTestChannel(channel) },
             )
-            forecast?.let {
-                Spacer(modifier = Modifier.height(8.dp))
-                Text(
-                    text = "Последний прогноз: " + it.probabilityPercent + "% · " +
-                        UsageFormat.updatedAt(it.fetchedAtMillis),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
+        }
+        if (settings.idleEnabled) {
+            HorizontalDivider()
+            Text("Время с выключения экрана", style = MaterialTheme.typography.titleMedium)
+            Text("Заблокируйте экран и оставьте телефон экраном вниз. После выбранного времени подсветка " +
+                "начнёт светиться слабо и постепенно станет ярче. Включение экрана сбрасывает отсчёт; движения не учитываются.",
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            IdleAlarmNotice()
+            Text("Загорается через", style = MaterialTheme.typography.bodyMedium)
+            AmbientSettings.ALLOWED_IDLE_MINUTES.forEach { minutes ->
+                Row(modifier = Modifier.fillMaxWidth().clickable(enabled = !busy) { onSelectIdleMinutes(minutes) },
+                    verticalAlignment = Alignment.CenterVertically) {
+                    RadioButton(selected = minutes == settings.idleThresholdMinutes,
+                        onClick = { onSelectIdleMinutes(minutes) }, enabled = !busy)
+                    Text("$minutes мин", modifier = Modifier.padding(start = 8.dp))
+                }
             }
         }
+        if (settings.rainEnabled) {
+            HorizontalDivider()
+            Text("Прогноз дождя", style = MaterialTheme.typography.titleMedium)
+            Text("Яркость показывает вероятность осадков на ближайшие три часа. Ниже 30% подсветка погашена.",
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            PlacePicker(place = settings.place, busy = busy, onSelectPlace = onSelectPlace, onClearPlace = onClearPlace)
+            forecast?.let {
+                Text("Последний прогноз: ${it.probabilityPercent}% · " + UsageFormat.updatedAt(it.fetchedAtMillis),
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            Text("Прогноз Open-Meteo обновляется раз в полчаса. Введите город; доступ к геолокации и регистрация не нужны.",
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+    }
+}
 
-        Spacer(modifier = Modifier.height(12.dp))
-        Text(
-            text = """
-                Прогноз Open-Meteo обновляется раз в полчаса. Введите город;
-                доступ к геолокации и регистрация не нужны.
-            """.trimIndent(),
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun ChannelModePicker(
+    channel: AmbientChannel,
+    selected: GlyphChannelMode,
+    enabled: Boolean,
+    onSelect: (GlyphChannelMode) -> Unit,
+    onTest: () -> Unit,
+) {
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("Канал $channel", style = MaterialTheme.typography.titleMedium)
+            SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
+                GlyphChannelMode.entries.forEachIndexed { index, mode ->
+                    SegmentedButton(
+                        selected = selected == mode, onClick = { onSelect(mode) }, enabled = enabled,
+                        shape = SegmentedButtonDefaults.itemShape(index, GlyphChannelMode.entries.size),
+                        label = { Text(mode.label) }, icon = {},
+                    )
+                }
+            }
+            val description = when (selected) {
+                GlyphChannelMode.OFF -> "Обычная подсветка этого канала выключена."
+                GlyphChannelMode.RAIN -> "Вероятность дождя для выбранного города."
+                GlyphChannelMode.IDLE -> "Сколько времени экран остаётся выключенным."
+            }
+            Text(description, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            OutlinedButton(onClick = onTest, enabled = enabled) { Text("Проверить $channel · 5 секунд") }
+            Text("Проверка включает полную яркость и возвращает обычную индикацию. Экран можно оставить включённым.",
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
     }
 }
 
@@ -257,7 +206,7 @@ private fun PlacePicker(
 
     if (place == null) {
         Text(
-            text = "Место не выбрано — канал B будет погашен.",
+            text = "Город не выбран — индикация дождя будет погашена.",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -362,9 +311,9 @@ private fun IdleAlarmNotice() {
     Spacer(Modifier.height(12.dp))
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(Modifier.padding(12.dp)) {
-            Text("Срабатывание A во время сна", style = MaterialTheme.typography.titleSmall)
+            Text("Срабатывание таймера во время сна", style = MaterialTheme.typography.titleSmall)
             Spacer(Modifier.height(4.dp))
-            Text("Разрешите точные будильники, чтобы A загорался ближе к выбранному времени. " +
+            Text("Разрешите точные будильники, чтобы подсветка загоралась ближе к выбранному времени. " +
                 "Без разрешения Android может отложить подсветку.",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             OutlinedButton(onClick = {

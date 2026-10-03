@@ -3,7 +3,7 @@
     xmlns:tools="http://schemas.android.com/tools">
 
     <uses-permission android:name="android.permission.INTERNET" />
-    <!-- Короткая блокировка CPU для завершения пятисекундной проверки A. -->
+    <!-- Короткая блокировка CPU для завершения пятисекундной проверки каналов. -->
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="com.nothing.ketchum.permission.ENABLE" />

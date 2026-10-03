@@ -2,25 +2,33 @@ package space.megaworld.claudeusage.data
 
 import kotlinx.serialization.Serializable
 
-/**
- * Что показывают короткие каналы A и B на Phone (2a), помимо полосы C.
- *
- * Полоса C — величина (расход лимита), её рисует [GlyphRenderMode]. A и B —
- * одиночные каналы, процент на них не покажешь, поэтому они отданы состояниям:
- * A — сколько телефон лежит нетронутым, B — ждать ли дождя. Выразительность у
- * них одна: яркость, 0..[GlyphLight.MAX].
- */
+/** Физические короткие каналы Glyph; C остаётся полосой лимита. */
+enum class AmbientChannel { A, B }
+
+enum class GlyphChannelMode(val label: String) {
+    OFF("Выкл."), RAIN("Дождь"), IDLE("Простой"),
+}
+
+/** Назначение A и B хранится отдельно; город и порог общие для выбранных функций. */
 data class AmbientSettings(
-    val idleEnabled: Boolean = false,
+    val channelA: GlyphChannelMode = GlyphChannelMode.OFF,
+    val channelB: GlyphChannelMode = GlyphChannelMode.OFF,
     val idleThresholdMinutes: Int = DEFAULT_IDLE_MINUTES,
-    val rainEnabled: Boolean = false,
     val place: WeatherPlace? = null,
 ) {
-    /** Нужен ли вообще поход за погодой: без места спрашивать нечего. */
+    val idleEnabled: Boolean get() = channelA == GlyphChannelMode.IDLE || channelB == GlyphChannelMode.IDLE
+    val rainEnabled: Boolean get() = channelA == GlyphChannelMode.RAIN || channelB == GlyphChannelMode.RAIN
     val wantsWeather: Boolean get() = rainEnabled && place != null
 
+    fun modeFor(channel: AmbientChannel): GlyphChannelMode = if (channel == AmbientChannel.A) channelA else channelB
+
+    fun lightFor(channel: AmbientChannel, idleMillis: Long, rainProbability: Int?): Int = when (modeFor(channel)) {
+        GlyphChannelMode.OFF -> GlyphLight.OFF
+        GlyphChannelMode.RAIN -> GlyphLight.forRain(rainProbability)
+        GlyphChannelMode.IDLE -> GlyphLight.forIdle(idleMillis, idleThresholdMinutes)
+    }
+
     companion object {
-        /** Через столько минут простоя канал A начинает тлеть. */
         val ALLOWED_IDLE_MINUTES = listOf(15, 30, 60, 120)
         const val DEFAULT_IDLE_MINUTES = 30
     }
@@ -58,7 +66,7 @@ object GlyphLight {
     const val FAINT = 600
 
     /**
-     * Канал A: простой [idleMillis] против порога [thresholdMinutes].
+     * Яркость функции простоя [idleMillis] против порога [thresholdMinutes].
      *
      * До порога канал погашен, на пороге начинает тлеть и разгорается до
      * максимума к четырёхкратному порогу — так «лежит полчаса» и «лежит два
@@ -74,7 +82,7 @@ object GlyphLight {
     }
 
     /**
-     * Канал B: вероятность осадков.
+     * Яркость функции дождя.
      *
      * Ступенями, а не линейно: абсолютную яркость одиночного светодиода глаз без
      * эталона не читает, а вот четыре различимых уровня — вполне.

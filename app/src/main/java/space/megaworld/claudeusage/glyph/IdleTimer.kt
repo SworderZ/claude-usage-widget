@@ -1,6 +1,6 @@
 package space.megaworld.claudeusage.glyph
 
-/** Отсчёт A и абсолютные сроки перерисовки; часы должны включать время сна. */
+/** Отсчёт простоя и абсолютные сроки перерисовки; часы должны включать время сна. */
 class IdleTimer(private val elapsedMillis: () -> Long, initiallyInteractive: Boolean = true) {
     var screenOn: Boolean = initiallyInteractive
         private set

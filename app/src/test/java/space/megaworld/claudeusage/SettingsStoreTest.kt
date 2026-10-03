@@ -2,6 +2,7 @@ package space.megaworld.claudeusage
 
 import androidx.datastore.preferences.core.PreferenceDataStoreFactory
 import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import java.io.File
 import kotlinx.coroutines.CoroutineScope
@@ -16,6 +17,8 @@ import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
+import space.megaworld.claudeusage.data.AmbientChannel
+import space.megaworld.claudeusage.data.GlyphChannelMode
 import space.megaworld.claudeusage.data.SettingsStore
 import space.megaworld.claudeusage.data.UsageProvider
 
@@ -62,7 +65,8 @@ class SettingsStoreTest {
             settings.setWidgetProvider(UsageProvider.CODEX)
             settings.setProvider(UsageProvider.CLAUDE)
             settings.setGlyphEnabled(true)
-            settings.setIdleEnabled(true)
+            settings.setChannelMode(AmbientChannel.B, GlyphChannelMode.IDLE)
+            settings.setChannelMode(AmbientChannel.A, GlyphChannelMode.RAIN)
             settings.setIdleThresholdMinutes(60)
         }
         withStore(file) { settings, _ ->
@@ -71,6 +75,8 @@ class SettingsStoreTest {
             assertTrue(settings.glyphEnabled.first())
             assertTrue(settings.ambient.first().idleEnabled)
             assertEquals(60, settings.ambient.first().idleThresholdMinutes)
+            assertEquals(GlyphChannelMode.RAIN, settings.ambient.first().channelA)
+            assertEquals(GlyphChannelMode.IDLE, settings.ambient.first().channelB)
         }
     }
 
@@ -78,12 +84,50 @@ class SettingsStoreTest {
     fun `clearing Claude settings preserves widget and ambient choices`() = runTest {
         withStore { settings, _ ->
             settings.setWidgetProvider(UsageProvider.CODEX)
-            settings.setIdleEnabled(true)
+            settings.setChannelMode(AmbientChannel.B, GlyphChannelMode.IDLE)
             settings.setOrganizationUuid("old-org")
             settings.clear()
             assertEquals(null, settings.organizationUuid.first())
             assertEquals(UsageProvider.CODEX, settings.widgetProvider.first())
             assertTrue(settings.ambient.first().idleEnabled)
+        }
+    }
+
+    @Test
+    fun `legacy enabled functions move to the requested channels`() = runTest {
+        withStore { settings, dataStore ->
+            dataStore.edit {
+                it[booleanPreferencesKey("glyph_idle_enabled")] = true
+                it[booleanPreferencesKey("glyph_rain_enabled")] = true
+            }
+            val ambient = settings.ambient.first()
+            assertEquals(GlyphChannelMode.RAIN, ambient.channelA)
+            assertEquals(GlyphChannelMode.IDLE, ambient.channelB)
+        }
+    }
+
+    @Test
+    fun `explicit off overrides legacy enabled flag without changing the other channel`() = runTest {
+        withStore { settings, dataStore ->
+            dataStore.edit {
+                it[booleanPreferencesKey("glyph_idle_enabled")] = true
+                it[booleanPreferencesKey("glyph_rain_enabled")] = true
+            }
+            settings.setChannelMode(AmbientChannel.A, GlyphChannelMode.OFF)
+            assertEquals(GlyphChannelMode.OFF, settings.ambient.first().channelA)
+            assertEquals(GlyphChannelMode.IDLE, settings.ambient.first().channelB)
+        }
+    }
+
+    @Test
+    fun `both channels can use idle and disabling one keeps the timer active`() = runTest {
+        withStore { settings, _ ->
+            settings.setChannelMode(AmbientChannel.A, GlyphChannelMode.IDLE)
+            settings.setChannelMode(AmbientChannel.B, GlyphChannelMode.IDLE)
+            settings.setChannelMode(AmbientChannel.A, GlyphChannelMode.OFF)
+            assertTrue(settings.ambient.first().idleEnabled)
+            settings.setChannelMode(AmbientChannel.B, GlyphChannelMode.OFF)
+            assertEquals(false, settings.ambient.first().idleEnabled)
         }
     }
 

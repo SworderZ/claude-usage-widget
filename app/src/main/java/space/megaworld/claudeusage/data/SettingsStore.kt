@@ -76,18 +76,21 @@ class SettingsStore internal constructor(private val dataStore: DataStore<Prefer
      */
     val ambient: Flow<AmbientSettings> = dataStore.data.map { prefs ->
         AmbientSettings(
-            idleEnabled = prefs[KEY_IDLE_ENABLED] ?: false,
+            // Включённые прежние функции меняем местами, выключенные оставляем выключенными.
+            channelA = prefs[KEY_CHANNEL_A_MODE]?.let { runCatching { GlyphChannelMode.valueOf(it) }.getOrNull() }
+                ?: if (prefs[KEY_RAIN_ENABLED] == true) GlyphChannelMode.RAIN else GlyphChannelMode.OFF,
+            channelB = prefs[KEY_CHANNEL_B_MODE]?.let { runCatching { GlyphChannelMode.valueOf(it) }.getOrNull() }
+                ?: if (prefs[KEY_IDLE_ENABLED] == true) GlyphChannelMode.IDLE else GlyphChannelMode.OFF,
             idleThresholdMinutes = prefs[KEY_IDLE_MINUTES]
                 ?.takeIf { it in AmbientSettings.ALLOWED_IDLE_MINUTES }
                 ?: AmbientSettings.DEFAULT_IDLE_MINUTES,
-            rainEnabled = prefs[KEY_RAIN_ENABLED] ?: false,
             place = prefs[KEY_WEATHER_PLACE]?.let { raw ->
                 runCatching { json.decodeFromString<WeatherPlace>(raw) }.getOrNull()
             },
         )
     }
 
-    /** Последний прогноз. Кеш нужен, чтобы канал B не гас из-за одного неудачного запроса. */
+    /** Последний прогноз. Кеш нужен, чтобы индикация дождя не гасла из-за одного неудачного запроса. */
     val rainForecast: Flow<RainForecast?> = dataStore.data.map { prefs ->
         prefs[KEY_RAIN_FORECAST]?.let { raw ->
             runCatching { json.decodeFromString<RainForecast>(raw) }.getOrNull()
@@ -98,8 +101,9 @@ class SettingsStore internal constructor(private val dataStore: DataStore<Prefer
 
     suspend fun currentRainForecast(): RainForecast? = rainForecast.first()
 
-    suspend fun setIdleEnabled(enabled: Boolean) {
-        dataStore.edit { it[KEY_IDLE_ENABLED] = enabled }
+    suspend fun setChannelMode(channel: AmbientChannel, mode: GlyphChannelMode) {
+        val key = if (channel == AmbientChannel.A) KEY_CHANNEL_A_MODE else KEY_CHANNEL_B_MODE
+        dataStore.edit { it[key] = mode.name }
     }
 
     suspend fun setIdleThresholdMinutes(minutes: Int) {
@@ -109,10 +113,6 @@ class SettingsStore internal constructor(private val dataStore: DataStore<Prefer
             AmbientSettings.DEFAULT_IDLE_MINUTES
         }
         dataStore.edit { it[KEY_IDLE_MINUTES] = safe }
-    }
-
-    suspend fun setRainEnabled(enabled: Boolean) {
-        dataStore.edit { it[KEY_RAIN_ENABLED] = enabled }
     }
 
     /** Смена места обнуляет прогноз: к новым координатам прежний не относится. */
@@ -174,6 +174,9 @@ class SettingsStore internal constructor(private val dataStore: DataStore<Prefer
         private val KEY_INTERVAL = intPreferencesKey("refresh_interval_minutes")
         private val KEY_GLYPH_ENABLED = booleanPreferencesKey("glyph_enabled")
         private val KEY_GLYPH_MODE = stringPreferencesKey("glyph_render_mode")
+        private val KEY_CHANNEL_A_MODE = stringPreferencesKey("glyph_channel_a_mode")
+        private val KEY_CHANNEL_B_MODE = stringPreferencesKey("glyph_channel_b_mode")
+        // Старые флаги читаем только при миграции; явный выбор канала имеет приоритет.
         private val KEY_IDLE_ENABLED = booleanPreferencesKey("glyph_idle_enabled")
         private val KEY_IDLE_MINUTES = intPreferencesKey("glyph_idle_minutes")
         private val KEY_RAIN_ENABLED = booleanPreferencesKey("glyph_rain_enabled")

@@ -4,6 +4,9 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import space.megaworld.claudeusage.data.GlyphLight
+import space.megaworld.claudeusage.data.AmbientChannel
+import space.megaworld.claudeusage.data.AmbientSettings
+import space.megaworld.claudeusage.data.GlyphChannelMode
 
 /**
  * Яркость каналов A и B. Проверяется здесь, а не глазами на телефоне, потому что
@@ -62,6 +65,23 @@ class GlyphLightTest {
         assertEquals(1800, GlyphLight.forRain(69))
         assertEquals(GlyphLight.MAX, GlyphLight.forRain(70))
         assertEquals(GlyphLight.MAX, GlyphLight.forRain(100))
+    }
+
+    @Test
+    fun `rain and idle reach their independently selected physical channels`() {
+        val settings = AmbientSettings(channelA = GlyphChannelMode.RAIN, channelB = GlyphChannelMode.IDLE)
+        assertEquals(GlyphLight.MAX, settings.lightFor(AmbientChannel.A, minutes(30), 80))
+        assertEquals(GlyphLight.FAINT, settings.lightFor(AmbientChannel.B, minutes(30), 80))
+        val swapped = settings.copy(channelA = GlyphChannelMode.IDLE, channelB = GlyphChannelMode.RAIN)
+        assertEquals(GlyphLight.FAINT, swapped.lightFor(AmbientChannel.A, minutes(30), 80))
+        assertEquals(GlyphLight.MAX, swapped.lightFor(AmbientChannel.B, minutes(30), 80))
+    }
+
+    @Test
+    fun `disabled channel stays dark even when both input functions are active`() {
+        val settings = AmbientSettings(channelA = GlyphChannelMode.OFF, channelB = GlyphChannelMode.RAIN)
+        assertEquals(GlyphLight.OFF, settings.lightFor(AmbientChannel.A, minutes(120), 80))
+        assertEquals(GlyphLight.MAX, settings.lightFor(AmbientChannel.B, minutes(120), 80))
     }
 
     private fun minutes(value: Int): Long = value.toLong() * 60_000L

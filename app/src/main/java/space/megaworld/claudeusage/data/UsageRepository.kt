@@ -238,20 +238,17 @@ class UsageRepository(
         settingsStore.setGlyphRenderMode(mode)
     }
 
-    suspend fun setIdleEnabled(enabled: Boolean) {
-        settingsStore.setIdleEnabled(enabled)
+    suspend fun setChannelMode(channel: AmbientChannel, mode: GlyphChannelMode) {
+        settingsStore.setChannelMode(channel, mode)
+        if (mode == GlyphChannelMode.RAIN) refreshWeatherIfStale()
     }
 
     suspend fun setIdleThresholdMinutes(minutes: Int) {
         settingsStore.setIdleThresholdMinutes(minutes)
     }
 
-    suspend fun setRainEnabled(enabled: Boolean) {
-        settingsStore.setRainEnabled(enabled)
-    }
-
     /**
-     * Название места → координаты, и сразу первый прогноз, чтобы канал B зажёгся
+     * Название места → координаты, и сразу первый прогноз, чтобы индикация дождя появилась
      * не дожидаясь следующего тика.
      */
     suspend fun selectWeatherPlace(query: String): ApiResult<WeatherPlace> {
@@ -286,7 +283,7 @@ class UsageRepository(
         refreshWeather(place)
     }
 
-    /** Неудача намеренно тихая: канал B доживёт на прежнем прогнозе. */
+    /** Неудача намеренно тихая: индикация дождя доживёт на прежнем прогнозе. */
     private suspend fun refreshWeather(place: WeatherPlace) {
         val result = weatherClient.fetchRain(place)
         if (result is ApiResult.Success) settingsStore.setRainForecast(result.value)

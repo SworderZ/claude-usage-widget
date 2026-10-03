@@ -23,6 +23,8 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import space.megaworld.claudeusage.AppGraph
 import space.megaworld.claudeusage.R
+import space.megaworld.claudeusage.data.AmbientChannel
+import space.megaworld.claudeusage.data.GlyphChannelMode
 import space.megaworld.claudeusage.data.GlyphLight
 import space.megaworld.claudeusage.data.SettingsStore
 import space.megaworld.claudeusage.data.UsageState
@@ -48,7 +50,7 @@ class UsageForegroundService : Service() {
     private val glyph by lazy { GlyphController(this) }
 
     /**
-     * Канал A питается временем, а не данными, поэтому у него свой источник
+     * Функция простоя питается временем, поэтому у неё свой источник
      * событий: гашение экрана начинает отсчёт и сразу просит перерисовать кадр.
      */
     private val idleTracker by lazy {
@@ -61,9 +63,10 @@ class UsageForegroundService : Service() {
     private var idleTracking = false
     private var started = false
     private var glyphConnected = false
-    private var aPreviewUntil = 0L
-    private var aPreviewGeneration = 0L
-    private var aPreviewJob: Job? = null
+    private var channelUnderTest: AmbientChannel? = null
+    private var channelPreviewUntil = 0L
+    private var channelPreviewGeneration = 0L
+    private var channelPreviewJob: Job? = null
     private var lastInterval = SettingsStore.DEFAULT_INTERVAL_MINUTES
 
     /** Последнее известное состояние: из него строится текст уведомления. */
@@ -91,7 +94,9 @@ class UsageForegroundService : Service() {
         }
         when (intent?.action) {
             ACTION_TICK -> runTick()
-            ACTION_TEST_A -> previewA()
+            ACTION_TEST_CHANNEL -> intent.getStringExtra(EXTRA_TEST_CHANNEL)?.let { raw ->
+                runCatching { AmbientChannel.valueOf(raw) }.getOrNull()?.let(::previewChannel)
+            }
             // Простой вырос — перерисовываем кадр и заводим следующую проверку.
             ACTION_AMBIENT_TICK -> {
                 renderGlyph()
@@ -104,9 +109,10 @@ class UsageForegroundService : Service() {
     }
 
     override fun onDestroy() {
-        aPreviewGeneration++
-        aPreviewUntil = 0L
-        aPreviewJob?.cancel()
+        channelPreviewGeneration++
+        channelPreviewUntil = 0L
+        channelUnderTest = null
+        channelPreviewJob?.cancel()
         cancelTick()
         cancelAmbientTick()
         if (idleTracking) {
@@ -184,33 +190,27 @@ class UsageForegroundService : Service() {
     }
 
     /**
-     * Кадр по текущему состоянию: полоса C — расход лимита, A — простой телефона,
-     * B — ожидаемый дождь. Выключенные каналы просто остаются погашенными, и тогда
+     * Кадр по текущему состоянию: полоса C — расход лимита, A и B — выбранные функции. Выключенные каналы просто остаются погашенными, и тогда
      * контроллер сам вернётся к родному displayProgress для полосы C.
      */
     private fun frameFor(state: UsageState): GlyphController.Request {
-        val ambient = state.ambient
+        fun light(channel: AmbientChannel): Int =
+            if (channelUnderTest == channel && SystemClock.elapsedRealtime() < channelPreviewUntil) {
+                GlyphLight.MAX
+            } else {
+                state.ambient.lightFor(channel, idleTracker.idleMillis, state.rainForecast?.probabilityPercent)
+            }
         return GlyphController.Request(
             cPercent = state.snapshot?.fiveHour?.utilization?.roundToInt(),
             mode = state.glyphRenderMode,
-            aLight = if (SystemClock.elapsedRealtime() < aPreviewUntil) {
-                GlyphLight.MAX
-            } else if (ambient.idleEnabled) {
-                GlyphLight.forIdle(idleTracker.idleMillis, ambient.idleThresholdMinutes)
-            } else {
-                GlyphLight.OFF
-            },
-            bLight = if (ambient.rainEnabled) {
-                GlyphLight.forRain(state.rainForecast?.probabilityPercent)
-            } else {
-                GlyphLight.OFF
-            },
+            aLight = light(AmbientChannel.A),
+            bLight = light(AmbientChannel.B),
         )
     }
 
     /**
      * Перерисовка без нового состояния — для событий, которые меняют не данные, а
-     * время: гашение экрана и собственный тик канала A.
+     * время: гашение экрана и собственный тик простоя.
      */
     private fun renderGlyph() {
         val state = lastState ?: return
@@ -270,7 +270,7 @@ class UsageForegroundService : Service() {
         getSystemService(AlarmManager::class.java)?.cancel(tickIntent(this))
     }
 
-    /** Первый будильник — на пороге A. WAKEUP доставляет его при спящем экране. */
+    /** Первый будильник — на пороге простоя. WAKEUP доставляет его при спящем экране. */
     private fun scheduleAmbientTick() {
         val state = lastState
         val ambient = state?.ambient
@@ -296,24 +296,26 @@ class UsageForegroundService : Service() {
         }
     }
 
-    /** Проверка физического A на полной яркости без ожидания и изменения настроек. */
-    private fun previewA() {
-        val generation = ++aPreviewGeneration
-        aPreviewUntil = SystemClock.elapsedRealtime() + A_PREVIEW_MILLIS
-        aPreviewJob?.cancel()
-        aPreviewJob = scope.launch {
+    /** Проверка выбранного физического канала на полной яркости без ожидания и изменения настроек. */
+    private fun previewChannel(channel: AmbientChannel) {
+        val generation = ++channelPreviewGeneration
+        channelUnderTest = channel
+        channelPreviewUntil = SystemClock.elapsedRealtime() + CHANNEL_PREVIEW_MILLIS
+        channelPreviewJob?.cancel()
+        channelPreviewJob = scope.launch {
             val wakeLock = getSystemService(PowerManager::class.java)?.newWakeLock(
-                PowerManager.PARTIAL_WAKE_LOCK, "AIUsage:A-preview",
+                PowerManager.PARTIAL_WAKE_LOCK, "AIUsage:channel-preview",
             )
             try {
                 // Даём тесту закончиться через 5 секунд, даже если пользователь заблокирует экран.
-                wakeLock?.acquire(A_PREVIEW_MILLIS + 5_000L)
+                wakeLock?.acquire(CHANNEL_PREVIEW_MILLIS + 5_000L)
                 renderGlyph()
                 lastState?.let { notify(buildNotification(statusText(it))) }
-                delay(A_PREVIEW_MILLIS)
+                delay(CHANNEL_PREVIEW_MILLIS)
             } finally {
-                if (generation == aPreviewGeneration) {
-                    aPreviewUntil = 0L
+                if (generation == channelPreviewGeneration) {
+                    channelPreviewUntil = 0L
+                    channelUnderTest = null
                     renderGlyph()
                     lastState?.let { notify(buildNotification(statusText(it))) }
                 }
@@ -333,19 +335,22 @@ class UsageForegroundService : Service() {
         // Время последнего обновления здесь не для красоты: по нему видно, тикает
         // ли служба вообще.
         val updated = UsageFormat.updatedAt(state.snapshot?.fetchedAtMillis ?: 0L)
-        val aStatus = when {
-            !state.glyphEnabled -> ""
-            SystemClock.elapsedRealtime() < aPreviewUntil -> " · A: проверка 5 секунд"
-            !state.ambient.idleEnabled -> " · A: выключен"
-            idleTracker.screenOn -> " · A: экран включён"
-            else -> {
-                val minutes = idleTracker.idleMillis / 60_000L
-                " · A: $minutes/${state.ambient.idleThresholdMinutes} мин" +
-                    if (minutes >= state.ambient.idleThresholdMinutes) " · порог достигнут" else ""
+        val channels = if (!state.glyphEnabled) "" else AmbientChannel.entries.joinToString("") { channel ->
+            val detail = if (channelUnderTest == channel && SystemClock.elapsedRealtime() < channelPreviewUntil) {
+                "проверка 5 секунд"
+            } else when (state.ambient.modeFor(channel)) {
+                GlyphChannelMode.OFF -> "выключен"
+                GlyphChannelMode.RAIN -> state.rainForecast?.let { "дождь: ${it.probabilityPercent}%" } ?: "нет прогноза"
+                GlyphChannelMode.IDLE -> if (idleTracker.screenOn) "экран включён" else {
+                    val minutes = idleTracker.idleMillis / 60_000L
+                    "$minutes/${state.ambient.idleThresholdMinutes} мин" +
+                        if (minutes >= state.ambient.idleThresholdMinutes) " · порог достигнут" else ""
+                }
             }
+            " · $channel: $detail"
         }
         return head + " · обновлено " + updated +
-            " · раз в " + state.refreshIntervalMinutes + " мин" + aStatus
+            " · раз в " + state.refreshIntervalMinutes + " мин" + channels
     }
 
     private fun startForegroundCompat(notification: Notification) {
@@ -402,8 +407,9 @@ class UsageForegroundService : Service() {
         private const val ACTION_STOP = "space.megaworld.claudeusage.STOP_SERVICE"
         private const val ACTION_TICK = "space.megaworld.claudeusage.TICK"
         private const val ACTION_AMBIENT_TICK = "space.megaworld.claudeusage.AMBIENT_TICK"
-        private const val ACTION_TEST_A = "space.megaworld.claudeusage.TEST_A"
-        private const val A_PREVIEW_MILLIS = 5_000L
+        private const val ACTION_TEST_CHANNEL = "space.megaworld.claudeusage.TEST_CHANNEL"
+        private const val EXTRA_TEST_CHANNEL = "glyph_test_channel"
+        private const val CHANNEL_PREVIEW_MILLIS = 5_000L
         private const val TICK_REQUEST = 7
         private const val AMBIENT_REQUEST = 8
 
@@ -436,8 +442,9 @@ class UsageForegroundService : Service() {
             context.startForegroundService(Intent(context, UsageForegroundService::class.java))
         }
 
-        fun testA(context: Context) {
-            context.startForegroundService(Intent(context, UsageForegroundService::class.java).setAction(ACTION_TEST_A))
+        fun testChannel(context: Context, channel: AmbientChannel) {
+            context.startForegroundService(Intent(context, UsageForegroundService::class.java)
+                .setAction(ACTION_TEST_CHANNEL).putExtra(EXTRA_TEST_CHANNEL, channel.name))
         }
 
         fun stop(context: Context) {

@@ -8,7 +8,7 @@ import android.os.PowerManager
 import android.os.SystemClock
 import androidx.core.content.ContextCompat
 
-/** События экрана для A; elapsedRealtime учитывает глубокий сон и не зависит от даты. */
+/** События экрана для отсчёта простоя; elapsedRealtime учитывает глубокий сон и не зависит от даты. */
 class IdleTracker(context: Context, private val onChanged: () -> Unit) {
     private val appContext = context.applicationContext
     private var registered = false

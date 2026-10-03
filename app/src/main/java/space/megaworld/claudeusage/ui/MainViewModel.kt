@@ -13,6 +13,8 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import space.megaworld.claudeusage.AppGraph
 import space.megaworld.claudeusage.glyph.UsageForegroundService
+import space.megaworld.claudeusage.data.AmbientChannel
+import space.megaworld.claudeusage.data.GlyphChannelMode
 import space.megaworld.claudeusage.data.ApiResult
 import space.megaworld.claudeusage.data.GlyphRenderMode
 import space.megaworld.claudeusage.data.RefreshResult
@@ -84,21 +86,17 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         graph.usageRepository.setGlyphRenderMode(mode)
     }
 
-    fun testA() = runBusy {
-        UsageForegroundService.testA(getApplication())
-        _message.value = "Проверка A запущена на 5 секунд. Посмотрите на подсветку сзади."
+    fun testChannel(channel: AmbientChannel) = runBusy {
+        UsageForegroundService.testChannel(getApplication(), channel)
+        _message.value = "Проверка $channel запущена на 5 секунд. Посмотрите на подсветку сзади."
     }
 
-    fun setIdleEnabled(enabled: Boolean) = runBusy {
-        graph.usageRepository.setIdleEnabled(enabled)
+    fun setChannelMode(channel: AmbientChannel, mode: GlyphChannelMode) = runBusy {
+        graph.usageRepository.setChannelMode(channel, mode)
     }
 
     fun setIdleThresholdMinutes(minutes: Int) = runBusy {
         graph.usageRepository.setIdleThresholdMinutes(minutes)
-    }
-
-    fun setRainEnabled(enabled: Boolean) = runBusy {
-        graph.usageRepository.setRainEnabled(enabled)
     }
 
     /** Геокодер отвечает не всегда — про неудачу пользователю надо сказать. */
