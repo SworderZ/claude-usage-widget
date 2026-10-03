@@ -1,6 +1,9 @@
 package space.megaworld.claudeusage.ui
 
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.clickable
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.semantics.Role
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
@@ -78,8 +81,9 @@ internal fun ExpandableSection(title: String, initiallyExpanded: Boolean = false
     content: @Composable ColumnScope.() -> Unit) {
     var expanded by rememberSaveable { mutableStateOf(initiallyExpanded) }
     SectionCard {
-        TextButton(onClick = { expanded = !expanded }, modifier = Modifier.fillMaxWidth(),
-            contentPadding = PaddingValues(0.dp)) {
+        Row(modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)
+            .clickable(role = Role.Button) { expanded = !expanded }.padding(vertical = 4.dp),
+            verticalAlignment = Alignment.CenterVertically) {
             Text(title, modifier = Modifier.weight(1f), style = MaterialTheme.typography.titleSmall,
                 color = MaterialTheme.colorScheme.onSurface)
             Icon(painterResource(if (expanded) R.drawable.ic_chevron_up else R.drawable.ic_chevron_down),
