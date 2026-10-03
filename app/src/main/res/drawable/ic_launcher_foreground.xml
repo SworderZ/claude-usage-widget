@@ -1,15 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
-    android:width="108dp"
-    android:height="108dp"
-    android:viewportWidth="108"
-    android:viewportHeight="108">
-    <path
-        android:fillColor="#FFFFFF"
-        android:pathData="M34,34h40v8h-40z" />
-    <path
-        android:fillColor="#FFFFFF"
-        android:pathData="M34,50h28v8h-28z" />
-    <path
-        android:fillColor="#FFFFFF"
-        android:pathData="M34,66h16v8h-16z" />
+    android:width="108dp" android:height="108dp"
+    android:viewportWidth="108" android:viewportHeight="108">
+    <!-- Три световых элемента складываются в G и помещаются в безопасную область адаптивного значка. -->
+    <path android:fillColor="#00000000"
+        android:strokeColor="#F5F5F5"
+        android:strokeWidth="6.5"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="M58,34 L66,34" />
+    <path android:fillColor="#00000000"
+        android:strokeColor="#F5F5F5"
+        android:strokeWidth="6.5"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="M73,41 L73,45" />
+    <path android:fillColor="#00000000"
+        android:strokeColor="#F5F5F5"
+        android:strokeWidth="6.5"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="M49,34 C38,34 33,43 33,54 C33,67 42,75 54,75 C67,75 75,66 75,55 L58,55" />
 </vector>

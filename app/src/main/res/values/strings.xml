@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">AI Usage</string>
-    <string name="widget_label">AI Usage</string>
-    <string name="widget_description">Расход лимитов подписки Claude</string>
+    <string name="app_name">tinyGlyph</string>
+    <string name="widget_label">tinyGlyph</string>
+    <string name="widget_description">Лимиты подписок Claude и Codex</string>
     <string name="login_title">Вход в claude.ai</string>
     <string name="manual_login_title">Вход по ключу сессии</string>
 </resources>

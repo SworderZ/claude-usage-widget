@@ -75,7 +75,7 @@ internal fun classifyOpenAiUsageResponse(
     if (html || mitigation.equals("challenge", ignoreCase = true)) {
         return ApiResult.Failure(
             "OpenAI: HTTP $code — вместо лимитов пришла страница блокировки или проверки Cloudflare. " +
-                "Это не доказательство истёкшей сессии. Проверьте маршрут VPN для AI Usage " +
+                "Это не доказательство истёкшей сессии. Проверьте маршрут VPN для tinyGlyph " +
                 "(space.megaworld.claudeusage) и попробуйте другой узел."
         )
     }
@@ -123,7 +123,7 @@ class OpenAiUsageClient(
                 }
             }
         } catch (e: java.io.IOException) {
-            "Не удалось связаться с OpenAI. Проверьте интернет и VPN-маршрут приложения AI Usage."
+            "Не удалось связаться с OpenAI. Проверьте интернет и VPN-маршрут приложения tinyGlyph."
         }
     }
 
@@ -139,7 +139,7 @@ class OpenAiUsageClient(
                     response.header("Content-Type"), response.header("cf-mitigated"))
             }
         } catch (e: java.io.IOException) {
-            ApiResult.Failure("Не удалось связаться с OpenAI. Проверьте интернет и VPN-маршрут приложения AI Usage.")
+            ApiResult.Failure("Не удалось связаться с OpenAI. Проверьте интернет и VPN-маршрут приложения tinyGlyph.")
         } catch (e: IllegalArgumentException) {
             ApiResult.Failure("Не удалось прочитать лимиты OpenAI. Проверьте формат файла входа.")
         }

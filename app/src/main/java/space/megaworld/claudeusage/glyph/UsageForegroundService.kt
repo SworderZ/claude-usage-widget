@@ -389,11 +389,11 @@ class UsageForegroundService : Service() {
             PendingIntent.FLAG_IMMUTABLE,
         )
         return Notification.Builder(this, CHANNEL_ID)
-            .setContentTitle("AI Usage")
+            .setContentTitle(getString(R.string.app_name))
             .setContentText(text)
             .setStyle(Notification.BigTextStyle().bigText(text))
             .setOnlyAlertOnce(true)
-            .setSmallIcon(R.drawable.ic_notification_claude)
+            .setSmallIcon(R.drawable.ic_notification_glyph)
             .setContentIntent(open)
             .setOngoing(true)
             .build()

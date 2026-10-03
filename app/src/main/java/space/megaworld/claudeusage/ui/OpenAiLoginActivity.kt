@@ -63,7 +63,7 @@ class OpenAiLoginActivity : ComponentActivity() {
                         Text("Подключить Codex", style = MaterialTheme.typography.headlineSmall)
                         Text("На компьютере с выполненным входом Codex найдите файл .codex/auth.json в папке пользователя. Перенесите его на телефон и выберите ниже.")
                         Text("Файл содержит секреты аккаунта. Не отправляйте его в чаты. После импорта удалите перенесённую копию. Приложение хранит access token зашифрованным и не использует refresh token компьютера.", style = MaterialTheme.typography.bodySmall)
-                        Text("Если VPN работает по списку приложений, включите в маршрут AI Usage (space.megaworld.claudeusage). Открывающийся браузер не подтверждает, что это приложение идёт тем же маршрутом.", style = MaterialTheme.typography.bodySmall)
+                        Text("Если VPN работает по списку приложений, включите в маршрут tinyGlyph (space.megaworld.claudeusage). Открывающийся браузер не подтверждает, что это приложение идёт тем же маршрутом.", style = MaterialTheme.typography.bodySmall)
                         Text("Когда access token истечёт, потребуется импорт свежего файла. Это подключение показывает лимиты Codex, а не количество оставшихся сообщений ChatGPT.")
                         Button(onClick = { pickFile.launch(arrayOf("application/json", "text/plain", "application/octet-stream")) }, enabled = !busy) { Text("Выбрать файл входа") }
                         OutlinedButton(onClick = {

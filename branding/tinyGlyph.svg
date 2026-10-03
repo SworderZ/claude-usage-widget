@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="108" height="108" viewBox="0 0 108 108">
+  <title>tinyGlyph</title>
+  <rect width="108" height="108" rx="24" fill="#111315"/>
+  <g fill="none" stroke="#f5f5f5" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M58,34 L66,34"/>
+    <path d="M73,41 L73,45"/>
+    <path d="M49,34 C38,34 33,43 33,54 C33,67 42,75 54,75 C67,75 75,66 75,55 L58,55"/>
+  </g>
+</svg>
