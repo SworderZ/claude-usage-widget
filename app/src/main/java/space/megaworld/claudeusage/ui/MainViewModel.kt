@@ -21,6 +21,7 @@ import space.megaworld.claudeusage.data.GlyphRenderMode
 import space.megaworld.claudeusage.data.RefreshResult
 import space.megaworld.claudeusage.data.UsageProvider
 import space.megaworld.claudeusage.data.UsageState
+import space.megaworld.claudeusage.data.WeatherPlace
 import space.megaworld.claudeusage.widget.UsageWidget
 import space.megaworld.claudeusage.worker.UsageRefreshWorker
 
@@ -105,16 +106,22 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     /** Геокодер отвечает не всегда — про неудачу пользователю надо сказать. */
-    fun selectWeatherPlace(query: String) = runBusy {
-        when (val result = graph.usageRepository.selectWeatherPlace(query)) {
-            is ApiResult.Success -> _message.value = "Место: " + result.value.name
+    fun addWeatherPlace(query: String) = runBusy {
+        when (val result = graph.usageRepository.addWeatherPlace(query)) {
+            is ApiResult.Success -> _message.value = "Выбран город: " + result.value.name
             ApiResult.Unauthorized -> _message.value = "Сервис погоды отказал"
             is ApiResult.Failure -> _message.value = result.message
         }
     }
 
-    fun clearWeatherPlace() = runBusy {
-        graph.usageRepository.clearWeatherPlace()
+    fun selectWeatherPlace(place: WeatherPlace) = runBusy {
+        _message.value = null
+        graph.usageRepository.selectWeatherPlace(place)
+    }
+
+    fun removeWeatherPlace(place: WeatherPlace) = runBusy {
+        _message.value = null
+        graph.usageRepository.removeWeatherPlace(place)
     }
 
     fun setRefreshInterval(minutes: Int) = runBusy {

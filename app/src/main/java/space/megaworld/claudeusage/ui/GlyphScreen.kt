@@ -7,6 +7,7 @@ import android.provider.Settings
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -14,6 +15,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.Role
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.compose.ui.unit.dp
@@ -41,8 +43,9 @@ fun GlyphScreen(
     onSelectChannelMode: (AmbientChannel, GlyphChannelMode) -> Unit,
     onTestChannel: (AmbientChannel) -> Unit,
     onSelectIdleMinutes: (Int) -> Unit,
-    onSelectPlace: (String) -> Unit,
-    onClearPlace: () -> Unit,
+    onAddPlace: (String) -> Unit,
+    onSelectPlace: (WeatherPlace) -> Unit,
+    onRemovePlace: (WeatherPlace) -> Unit,
 ) {
     Scaffold(topBar = { TopAppBar(title = { Text("Glyph") }) }) { innerPadding ->
         Column(
@@ -88,7 +91,7 @@ fun GlyphScreen(
                     HorizontalDivider()
                     Spacer(Modifier.height(16.dp))
                     WeatherSetting(settings = state.ambient, forecast = state.rainForecast, busy = busy,
-                        onSelectPlace = onSelectPlace, onClearPlace = onClearPlace)
+                        onAddPlace = onAddPlace, onSelectPlace = onSelectPlace, onRemovePlace = onRemovePlace)
                 }
             }
             Spacer(Modifier.height(24.dp))
@@ -191,82 +194,87 @@ private fun WeatherSetting(
     settings: AmbientSettings,
     forecast: RainForecast?,
     busy: Boolean,
-    onSelectPlace: (String) -> Unit,
-    onClearPlace: () -> Unit,
+    onAddPlace: (String) -> Unit,
+    onSelectPlace: (WeatherPlace) -> Unit,
+    onRemovePlace: (WeatherPlace) -> Unit,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        Text("Город и прогноз осадков", style = MaterialTheme.typography.titleMedium)
+        Text("Города и прогноз осадков", style = MaterialTheme.typography.titleMedium)
         Text("Используется самая высокая почасовая вероятность осадков на ближайшие три часа. " +
-            "Город общий для всех каналов, которым назначена погода.",
+            "Выбранный город общий для всех каналов, которым назначена погода.",
             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         if (settings.channelA == GlyphChannelMode.RAIN || settings.channelB == GlyphChannelMode.RAIN) {
             Text("Для коротких A/B вероятность задаёт яркость; ниже 30% они погашены. " +
                 "В режиме «Осадки» C показывает процент длиной заполнения.",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
-        PlacePicker(place = settings.place, busy = busy, onSelectPlace = onSelectPlace, onClearPlace = onClearPlace)
-        forecast?.let {
-            Text("Последний прогноз: ${it.probabilityPercent}% · " + UsageFormat.updatedAt(it.fetchedAtMillis),
+        PlacePicker(places = settings.places, selected = settings.place, busy = busy,
+            onAddPlace = onAddPlace, onSelectPlace = onSelectPlace, onRemovePlace = onRemovePlace)
+        if (forecast != null) {
+            Text("${settings.place?.name}: ${forecast.probabilityPercent}% · " + UsageFormat.updatedAt(forecast.fetchedAtMillis),
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        } else if (settings.place != null) {
+            Text("Прогноз для ${settings.place.name} ещё не загружен.",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
-        Text("Прогноз Open-Meteo обновляется в фоне, не чаще раза в полчаса. Доступ к геолокации и регистрация не нужны.",
+        Text("Прогноз выбранного города обновляется в фоне, не чаще раза в полчаса. Доступ к геолокации и регистрация не нужны.",
             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
 
-/** Место для прогноза: вводится названием, координаты достаёт геокодер. */
+/** Сохранённые города переключаются без повторного поиска координат. */
 @Composable
 private fun PlacePicker(
-    place: WeatherPlace?,
+    places: List<WeatherPlace>,
+    selected: WeatherPlace?,
     busy: Boolean,
-    onSelectPlace: (String) -> Unit,
-    onClearPlace: () -> Unit,
+    onAddPlace: (String) -> Unit,
+    onSelectPlace: (WeatherPlace) -> Unit,
+    onRemovePlace: (WeatherPlace) -> Unit,
 ) {
     var query by rememberSaveable { mutableStateOf("") }
-
-    if (place == null) {
-        Text(
-            text = "Город не выбран — индикация дождя будет погашена.",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-    } else {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text(text = place.name, style = MaterialTheme.typography.bodyLarge)
-                Text(
-                    text = "%.3f, %.3f".format(place.latitude, place.longitude),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-            OutlinedButton(onClick = onClearPlace, enabled = !busy) {
-                Text(text = "Сбросить")
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text("Сохранённые города", style = MaterialTheme.typography.titleSmall)
+        Text("Нажмите на город, чтобы переключить прогноз. Новый город сразу становится выбранным.",
+            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        if (places.isEmpty()) {
+            Text("Добавьте город — пока индикация осадков погашена.",
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        places.forEach { place ->
+            val isSelected = place.id == selected?.id
+            Card(modifier = Modifier.fillMaxWidth()) {
+                Row(modifier = Modifier.fillMaxWidth().padding(end = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically) {
+                    Row(modifier = Modifier.weight(1f)
+                        .selectable(selected = isSelected, enabled = !busy, role = Role.RadioButton,
+                            onClick = { onSelectPlace(place) })
+                        .padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                        RadioButton(selected = isSelected, onClick = null, enabled = !busy)
+                        Column(modifier = Modifier.weight(1f).padding(start = 8.dp)) {
+                            Text(place.name, style = MaterialTheme.typography.bodyLarge)
+                            if (isSelected) {
+                                Text("Выбран для прогноза", style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.primary)
+                            }
+                            if (places.count { it.name == place.name } > 1) {
+                                Text("%.3f, %.3f".format(place.latitude, place.longitude),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                        }
+                    }
+                    TextButton(onClick = { onRemovePlace(place) }, enabled = !busy) { Text("Удалить") }
+                }
             }
         }
-    }
-
-    Spacer(modifier = Modifier.height(8.dp))
-    OutlinedTextField(
-        value = query,
-        onValueChange = { query = it },
-        label = { Text(text = "Город") },
-        singleLine = true,
-        enabled = !busy,
-        modifier = Modifier.fillMaxWidth(),
-    )
-    Spacer(modifier = Modifier.height(8.dp))
-    OutlinedButton(
-        onClick = {
-            onSelectPlace(query)
-            query = ""
-        },
-        enabled = !busy && query.isNotBlank(),
-    ) {
-        Text(text = "Найти")
+        Spacer(modifier = Modifier.height(4.dp))
+        OutlinedTextField(value = query, onValueChange = { query = it },
+            label = { Text("Добавить город") }, singleLine = true, enabled = !busy,
+            modifier = Modifier.fillMaxWidth())
+        OutlinedButton(onClick = { onAddPlace(query); query = "" }, enabled = !busy && query.isNotBlank()) {
+            Text("Добавить")
+        }
     }
 }
 
@@ -297,7 +305,8 @@ private fun GlyphSetting(
                     GlyphStripMode.OFF -> "Полоса C погашена."
                 }, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 if (percent != null) {
-                    Text("Сейчас: $percent%", style = MaterialTheme.typography.titleLarge, color = MaterialTheme.colorScheme.primary)
+                    Text(if (stripMode == GlyphStripMode.RAIN) "${state.ambient.place?.name} · $percent%" else "Сейчас: $percent%",
+                        style = MaterialTheme.typography.titleLarge, color = MaterialTheme.colorScheme.primary)
                 } else if (stripMode != GlyphStripMode.OFF) {
                     Text(when {
                         stripMode == GlyphStripMode.USAGE -> "Нет данных о лимите."

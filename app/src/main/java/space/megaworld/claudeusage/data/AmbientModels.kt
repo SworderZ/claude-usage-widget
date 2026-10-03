@@ -21,6 +21,7 @@ data class AmbientSettings(
     val stripMode: GlyphStripMode = GlyphStripMode.USAGE,
     val idleThresholdMinutes: Int = DEFAULT_IDLE_MINUTES,
     val place: WeatherPlace? = null,
+    val places: List<WeatherPlace> = emptyList(),
 ) {
     val idleEnabled: Boolean get() = channelA == GlyphChannelMode.IDLE || channelB == GlyphChannelMode.IDLE
     val rainEnabled: Boolean get() = channelA == GlyphChannelMode.RAIN || channelB == GlyphChannelMode.RAIN || stripMode == GlyphStripMode.RAIN
@@ -56,7 +57,13 @@ data class WeatherPlace(
     val name: String,
     val latitude: Double,
     val longitude: Double,
-)
+) {
+    /** Название не определяет город: одноимённые места могут иметь разные координаты. */
+    val id: String get() = "$latitude:$longitude"
+}
+
+/** Город и его прогноз читаются вместе, чтобы переключение не показывало чужой процент. */
+data class AmbientState(val settings: AmbientSettings, val forecast: RainForecast?)
 
 /** Последний удачно полученный прогноз дождя. */
 @Serializable

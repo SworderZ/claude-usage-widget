@@ -74,10 +74,8 @@ class UsageRepository(
                 state.copy(glyphEnabled = glyphEnabled)
             }.combine(settingsStore.glyphRenderMode) { state, mode ->
                 state.copy(glyphRenderMode = mode)
-            }.combine(settingsStore.ambient) { state, ambient ->
-                state.copy(ambient = ambient)
-            }.combine(settingsStore.rainForecast) { state, forecast ->
-                state.copy(rainForecast = forecast)
+            }.combine(settingsStore.ambientState) { state, ambient ->
+                state.copy(ambient = ambient.settings, rainForecast = ambient.forecast)
             }.combine(settingsStore.widgetProvider) { state, widgetProvider ->
                 state.copy(widgetProvider = widgetProvider)
             }
@@ -257,13 +255,13 @@ class UsageRepository(
      * Название места → координаты, и сразу первый прогноз, чтобы индикация дождя появилась
      * не дожидаясь следующего тика.
      */
-    suspend fun selectWeatherPlace(query: String): ApiResult<WeatherPlace> {
+    suspend fun addWeatherPlace(query: String): ApiResult<WeatherPlace> {
         return when (val result = weatherClient.geocode(query)) {
             is ApiResult.Success -> {
                 weatherMutex.withLock {
-                    settingsStore.setWeatherPlace(result.value)
-                    refreshWeather(result.value)
+                    settingsStore.addWeatherPlace(result.value)
                 }
+                refreshWeatherIfStale()
                 result
             }
             ApiResult.Unauthorized -> ApiResult.Failure("Сервис погоды отказал")
@@ -271,8 +269,14 @@ class UsageRepository(
         }
     }
 
-    suspend fun clearWeatherPlace() = weatherMutex.withLock {
-        settingsStore.setWeatherPlace(null)
+    suspend fun selectWeatherPlace(place: WeatherPlace) {
+        weatherMutex.withLock { settingsStore.selectWeatherPlace(place) }
+        refreshWeatherIfStale()
+    }
+
+    suspend fun removeWeatherPlace(place: WeatherPlace) {
+        weatherMutex.withLock { settingsStore.removeWeatherPlace(place) }
+        refreshWeatherIfStale()
     }
 
     /**
@@ -283,9 +287,9 @@ class UsageRepository(
      * сервис каждые пять минут незачем.
      */
     suspend fun refreshWeatherIfStale() = weatherMutex.withLock {
-        val ambient = settingsStore.currentAmbient()
-        val place = ambient.place?.takeIf { ambient.rainEnabled } ?: return@withLock
-        val previous = settingsStore.currentRainForecast()
+        val ambient = settingsStore.currentAmbientState()
+        val place = ambient.settings.place?.takeIf { ambient.settings.rainEnabled } ?: return@withLock
+        val previous = ambient.forecast
         val age = System.currentTimeMillis() - (previous?.fetchedAtMillis ?: 0L)
         if (previous != null && age < WEATHER_TTL_MILLIS) return@withLock
         refreshWeather(place)
@@ -294,7 +298,7 @@ class UsageRepository(
     /** Неудача намеренно тихая: индикация дождя доживёт на прежнем прогнозе. */
     private suspend fun refreshWeather(place: WeatherPlace) {
         val result = weatherClient.fetchRain(place)
-        if (result is ApiResult.Success) settingsStore.setRainForecast(result.value)
+        if (result is ApiResult.Success) settingsStore.setRainForecast(place, result.value)
     }
 
     suspend fun setWidgetProvider(provider: UsageProvider) {

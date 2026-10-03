@@ -176,8 +176,9 @@ private fun AppRoot(onOpenLogin: () -> Unit, onOpenManualLogin: () -> Unit) {
                             onSelectChannelMode = viewModel::setChannelMode,
                             onTestChannel = viewModel::testChannel,
                             onSelectIdleMinutes = viewModel::setIdleThresholdMinutes,
+                            onAddPlace = viewModel::addWeatherPlace,
                             onSelectPlace = viewModel::selectWeatherPlace,
-                            onClearPlace = viewModel::clearWeatherPlace,
+                            onRemovePlace = viewModel::removeWeatherPlace,
                         )
                         Screen.SETTINGS -> SettingsScreen(
                             state = loaded, busy = busy,

@@ -9,6 +9,11 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.test.UnconfinedTestDispatcher
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.encodeToString
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.runTest
@@ -20,10 +25,13 @@ import org.junit.rules.TemporaryFolder
 import space.megaworld.claudeusage.data.AmbientChannel
 import space.megaworld.claudeusage.data.GlyphChannelMode
 import space.megaworld.claudeusage.data.GlyphStripMode
+import space.megaworld.claudeusage.data.AmbientState
+import space.megaworld.claudeusage.data.RainForecast
 import space.megaworld.claudeusage.data.WeatherPlace
 import space.megaworld.claudeusage.data.SettingsStore
 import space.megaworld.claudeusage.data.UsageProvider
 
+@OptIn(ExperimentalCoroutinesApi::class)
 class SettingsStoreTest {
     @get:Rule val temporaryFolder = TemporaryFolder()
 
@@ -64,6 +72,9 @@ class SettingsStoreTest {
     fun `widget and Glyph choices survive reopening the settings file`() = runTest {
         val file = File(temporaryFolder.root, "saved.preferences_pb")
         val place = WeatherPlace("Москва", 55.75, 37.62)
+        val second = WeatherPlace("Казань", 55.79, 49.12)
+        val forecast = RainForecast(70, 1_000L)
+        val secondForecast = RainForecast(20, 2_000L)
         withStore(file) { settings, _ ->
             settings.setWidgetProvider(UsageProvider.CODEX)
             settings.setProvider(UsageProvider.CLAUDE)
@@ -72,7 +83,11 @@ class SettingsStoreTest {
             settings.setChannelMode(AmbientChannel.A, GlyphChannelMode.RAIN)
             settings.setIdleThresholdMinutes(60)
             settings.setStripMode(GlyphStripMode.RAIN)
-            settings.setWeatherPlace(place)
+            settings.addWeatherPlace(place)
+            settings.setRainForecast(place, forecast)
+            settings.addWeatherPlace(second)
+            settings.setRainForecast(second, secondForecast)
+            settings.selectWeatherPlace(place)
         }
         withStore(file) { settings, _ ->
             assertEquals(UsageProvider.CODEX, settings.widgetProvider.first())
@@ -84,6 +99,10 @@ class SettingsStoreTest {
             assertEquals(GlyphChannelMode.IDLE, settings.ambient.first().channelB)
             assertEquals(GlyphStripMode.RAIN, settings.ambient.first().stripMode)
             assertEquals(place, settings.ambient.first().place)
+            assertEquals(listOf(place, second), settings.ambient.first().places)
+            assertEquals(forecast, settings.currentRainForecast())
+            settings.selectWeatherPlace(second)
+            assertEquals(secondForecast, settings.currentRainForecast())
         }
     }
 
@@ -136,6 +155,125 @@ class SettingsStoreTest {
             assertTrue(settings.ambient.first().idleEnabled)
             settings.setChannelMode(AmbientChannel.B, GlyphChannelMode.OFF)
             assertEquals(false, settings.ambient.first().idleEnabled)
+        }
+    }
+
+    @Test
+    fun `upgrade preserves the old city and its forecast when another is added`() = runTest {
+        withStore { settings, dataStore ->
+            val old = WeatherPlace("Москва", 55.75, 37.62)
+            val next = WeatherPlace("Казань", 55.79, 49.12)
+            val forecast = RainForecast(70, 1_000L)
+            dataStore.edit {
+                it[stringPreferencesKey("weather_place")] = Json.encodeToString(old)
+                it[stringPreferencesKey("rain_forecast")] = Json.encodeToString(forecast)
+            }
+            assertEquals(listOf(old), settings.currentAmbient().places)
+            assertEquals(old, settings.currentAmbient().place)
+            assertEquals(forecast, settings.currentRainForecast())
+            settings.addWeatherPlace(next)
+            assertEquals(listOf(old, next), settings.currentAmbient().places)
+            assertEquals(next, settings.currentAmbient().place)
+            assertEquals(null, settings.currentRainForecast())
+            settings.selectWeatherPlace(old)
+            assertEquals(forecast, settings.currentRainForecast())
+        }
+    }
+
+    @Test
+    fun `switching cities emits each city with only its own forecast`() = runTest {
+        withStore { settings, _ ->
+            val first = WeatherPlace("Москва", 55.75, 37.62)
+            val second = WeatherPlace("Казань", 55.79, 49.12)
+            settings.addWeatherPlace(first)
+            settings.setRainForecast(first, RainForecast(80, 1_000L))
+            val observations = mutableListOf<AmbientState>()
+            val observer = backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
+                settings.ambientState.collect { observations += it }
+            }
+            try {
+                settings.addWeatherPlace(second)
+                assertEquals(second, settings.currentAmbient().place)
+                assertEquals(null, settings.currentRainForecast())
+                // Ответ на старый запрос после переключения не должен стать прогнозом нового города.
+                settings.setRainForecast(first, RainForecast(90, 2_000L))
+                assertEquals(null, settings.currentRainForecast())
+                settings.setRainForecast(second, RainForecast(0, 3_000L))
+                settings.selectWeatherPlace(first)
+                assertEquals(90, settings.currentRainForecast()?.probabilityPercent)
+                settings.selectWeatherPlace(second)
+                assertEquals(0, settings.currentRainForecast()?.probabilityPercent)
+                assertTrue(observations.any { it.settings.place == first && it.forecast?.probabilityPercent == 90 })
+                assertTrue(observations.any { it.settings.place == second && it.forecast?.probabilityPercent == 0 })
+                observations.forEach { state ->
+                    if (state.settings.place == first) {
+                        assertTrue(state.forecast?.probabilityPercent in listOf(80, 90))
+                    } else {
+                        assertTrue(state.forecast?.probabilityPercent in listOf(null, 0))
+                    }
+                }
+            } finally {
+                observer.cancelAndJoin()
+            }
+        }
+    }
+
+    @Test
+    fun `duplicate coordinates select the saved city while same names can refer to different cities`() = runTest {
+        withStore { settings, _ ->
+            val first = WeatherPlace("Одинаковое название", 55.75, 37.62)
+            val second = WeatherPlace("Одинаковое название", 55.79, 49.12)
+            settings.addWeatherPlace(first)
+            settings.setRainForecast(first, RainForecast(70, 1_000L))
+            settings.addWeatherPlace(second)
+            settings.addWeatherPlace(first.copy(name = "Другое название тех же координат"))
+            assertEquals(listOf(first, second), settings.currentAmbient().places)
+            assertEquals(first, settings.currentAmbient().place)
+            assertEquals(70, settings.currentRainForecast()?.probabilityPercent)
+        }
+    }
+
+    @Test
+    fun `removing cities preserves the selected forecast then falls back and finally clears weather`() = runTest {
+        withStore { settings, _ ->
+            val first = WeatherPlace("Москва", 55.75, 37.62)
+            val second = WeatherPlace("Казань", 55.79, 49.12)
+            val third = WeatherPlace("Самара", 53.2, 50.15)
+            settings.addWeatherPlace(first)
+            settings.setRainForecast(first, RainForecast(80, 1_000L))
+            settings.addWeatherPlace(second)
+            settings.setRainForecast(second, RainForecast(20, 2_000L))
+            settings.addWeatherPlace(third)
+            settings.selectWeatherPlace(second)
+            settings.removeWeatherPlace(third)
+            assertEquals(second, settings.currentAmbient().place)
+            assertEquals(20, settings.currentRainForecast()?.probabilityPercent)
+            settings.removeWeatherPlace(second)
+            assertEquals(first, settings.currentAmbient().place)
+            assertEquals(80, settings.currentRainForecast()?.probabilityPercent)
+            settings.removeWeatherPlace(first)
+            assertTrue(settings.currentAmbient().places.isEmpty())
+            assertEquals(null, settings.currentAmbient().place)
+            assertEquals(null, settings.currentRainForecast())
+            settings.addWeatherPlace(first)
+            assertEquals(null, settings.currentRainForecast())
+        }
+    }
+
+    @Test
+    fun `late forecast or stale selection cannot bring a deleted city back`() = runTest {
+        withStore { settings, _ ->
+            val first = WeatherPlace("Москва", 55.75, 37.62)
+            val second = WeatherPlace("Казань", 55.79, 49.12)
+            settings.addWeatherPlace(first)
+            settings.addWeatherPlace(second)
+            settings.setRainForecast(second, RainForecast(20, 2_000L))
+            settings.removeWeatherPlace(first)
+            settings.setRainForecast(first, RainForecast(90, 3_000L))
+            settings.selectWeatherPlace(first)
+            assertEquals(listOf(second), settings.currentAmbient().places)
+            assertEquals(second, settings.currentAmbient().place)
+            assertEquals(20, settings.currentRainForecast()?.probabilityPercent)
         }
     }
 

@@ -3,6 +3,7 @@ package space.megaworld.claudeusage.data
 import android.content.Context
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
+import androidx.datastore.preferences.core.MutablePreferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.intPreferencesKey
@@ -11,6 +12,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.serialization.builtins.ListSerializer
+import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 
 /** Несекретные настройки: выбранная организация и интервал обновления. */
@@ -74,8 +76,10 @@ class SettingsStore internal constructor(private val dataStore: DataStore<Prefer
      * Настройки каналов A/B/C. Сложены в один поток:
      * combine в [UsageRepository] уже упёрся в предел по числу источников.
      */
-    val ambient: Flow<AmbientSettings> = dataStore.data.map { prefs ->
-        AmbientSettings(
+    val ambientState: Flow<AmbientState> = dataStore.data.map { prefs ->
+        val places = readWeatherPlaces(prefs)
+        val selected = selectedWeatherPlace(prefs, places)
+        val settings = AmbientSettings(
             // Включённые прежние функции меняем местами, выключенные оставляем выключенными.
             channelA = prefs[KEY_CHANNEL_A_MODE]?.let { runCatching { GlyphChannelMode.valueOf(it) }.getOrNull() }
                 ?: if (prefs[KEY_RAIN_ENABLED] == true) GlyphChannelMode.RAIN else GlyphChannelMode.OFF,
@@ -86,21 +90,17 @@ class SettingsStore internal constructor(private val dataStore: DataStore<Prefer
             idleThresholdMinutes = prefs[KEY_IDLE_MINUTES]
                 ?.takeIf { it in AmbientSettings.ALLOWED_IDLE_MINUTES }
                 ?: AmbientSettings.DEFAULT_IDLE_MINUTES,
-            place = prefs[KEY_WEATHER_PLACE]?.let { raw ->
-                runCatching { json.decodeFromString<WeatherPlace>(raw) }.getOrNull()
-            },
+            place = selected,
+            places = places,
         )
+        AmbientState(settings, selected?.let { readRainForecasts(prefs)[it.id] })
     }
 
-    /** Последний прогноз. Кеш нужен, чтобы индикация дождя не гасла из-за одного неудачного запроса. */
-    val rainForecast: Flow<RainForecast?> = dataStore.data.map { prefs ->
-        prefs[KEY_RAIN_FORECAST]?.let { raw ->
-            runCatching { json.decodeFromString<RainForecast>(raw) }.getOrNull()
-        }
-    }
+    val ambient: Flow<AmbientSettings> = ambientState.map { it.settings }
+    val rainForecast: Flow<RainForecast?> = ambientState.map { it.forecast }
 
+    suspend fun currentAmbientState(): AmbientState = ambientState.first()
     suspend fun currentAmbient(): AmbientSettings = ambient.first()
-
     suspend fun currentRainForecast(): RainForecast? = rainForecast.first()
 
     suspend fun setChannelMode(channel: AmbientChannel, mode: GlyphChannelMode) {
@@ -121,22 +121,85 @@ class SettingsStore internal constructor(private val dataStore: DataStore<Prefer
         dataStore.edit { it[KEY_IDLE_MINUTES] = safe }
     }
 
-    /** Смена места обнуляет прогноз: к новым координатам прежний не относится. */
-    suspend fun setWeatherPlace(place: WeatherPlace?) {
+    /** Сохраняет город и выбирает его; одинаковые координаты не создают дубликат. */
+    suspend fun addWeatherPlace(place: WeatherPlace) {
         dataStore.edit { prefs ->
-            if (place == null) {
-                prefs.remove(KEY_WEATHER_PLACE)
-            } else {
-                prefs[KEY_WEATHER_PLACE] = json.encodeToString(WeatherPlace.serializer(), place)
-            }
-            prefs.remove(KEY_RAIN_FORECAST)
+            val places = readWeatherPlaces(prefs)
+            val saved = places.firstOrNull { it.id == place.id } ?: place
+            val next = if (saved in places) places else places + saved
+            saveWeather(prefs, next, saved, readRainForecasts(prefs))
         }
     }
 
-    suspend fun setRainForecast(forecast: RainForecast) {
-        dataStore.edit {
-            it[KEY_RAIN_FORECAST] = json.encodeToString(RainForecast.serializer(), forecast)
+    suspend fun selectWeatherPlace(place: WeatherPlace) {
+        dataStore.edit { prefs ->
+            val places = readWeatherPlaces(prefs)
+            val saved = places.firstOrNull { it.id == place.id } ?: return@edit
+            saveWeather(prefs, places, saved, readRainForecasts(prefs))
         }
+    }
+
+    /** При удалении выбранного города выбирается первый оставшийся. */
+    suspend fun removeWeatherPlace(place: WeatherPlace) {
+        dataStore.edit { prefs ->
+            val places = readWeatherPlaces(prefs)
+            if (places.none { it.id == place.id }) return@edit
+            val selected = selectedWeatherPlace(prefs, places)
+            val next = places.filterNot { it.id == place.id }
+            val nextSelected = selected?.takeIf { it.id != place.id } ?: next.firstOrNull()
+            saveWeather(prefs, next, nextSelected, readRainForecasts(prefs) - place.id)
+        }
+    }
+
+    /** Ответ привязан к запросившему его городу, даже если выбор уже изменился. */
+    suspend fun setRainForecast(place: WeatherPlace, forecast: RainForecast) {
+        dataStore.edit { prefs ->
+            val places = readWeatherPlaces(prefs)
+            if (places.none { it.id == place.id }) return@edit
+            saveWeather(prefs, places, selectedWeatherPlace(prefs, places),
+                readRainForecasts(prefs) + (place.id to forecast))
+        }
+    }
+
+    private fun readSelectedWeatherPlace(prefs: Preferences): WeatherPlace? =
+        prefs[KEY_WEATHER_PLACE]?.let { raw ->
+            runCatching { json.decodeFromString<WeatherPlace>(raw) }.getOrNull()
+        }
+
+    private fun readWeatherPlaces(prefs: Preferences): List<WeatherPlace> =
+        (prefs[KEY_WEATHER_PLACES]?.let { raw ->
+            runCatching { json.decodeFromString<List<WeatherPlace>>(raw) }.getOrNull()
+        } ?: listOfNotNull(readSelectedWeatherPlace(prefs))).distinctBy { it.id }
+
+    private fun selectedWeatherPlace(prefs: Preferences, places: List<WeatherPlace>): WeatherPlace? {
+        val selected = readSelectedWeatherPlace(prefs)
+        return places.firstOrNull { it.id == selected?.id } ?: places.firstOrNull()
+    }
+
+    private fun readRainForecasts(prefs: Preferences): Map<String, RainForecast> {
+        prefs[KEY_RAIN_FORECASTS]?.let { raw ->
+            return runCatching { json.decodeFromString<Map<String, RainForecast>>(raw) }
+                .getOrDefault(emptyMap())
+        }
+        // До списка городов прогноз относился только к единственному сохранённому месту.
+        val place = readSelectedWeatherPlace(prefs) ?: return emptyMap()
+        val legacy = prefs[KEY_RAIN_FORECAST]?.let { raw ->
+            runCatching { json.decodeFromString<RainForecast>(raw) }.getOrNull()
+        } ?: return emptyMap()
+        return mapOf(place.id to legacy)
+    }
+
+    private fun saveWeather(
+        prefs: MutablePreferences,
+        places: List<WeatherPlace>,
+        selected: WeatherPlace?,
+        forecasts: Map<String, RainForecast>,
+    ) {
+        prefs[KEY_WEATHER_PLACES] = json.encodeToString(places)
+        if (selected == null) prefs.remove(KEY_WEATHER_PLACE)
+        else prefs[KEY_WEATHER_PLACE] = json.encodeToString(selected)
+        prefs[KEY_RAIN_FORECASTS] = json.encodeToString(forecasts)
+        prefs.remove(KEY_RAIN_FORECAST)
     }
 
     suspend fun currentIntervalMinutes(): Int = refreshIntervalMinutes.first()
@@ -188,6 +251,8 @@ class SettingsStore internal constructor(private val dataStore: DataStore<Prefer
         private val KEY_IDLE_MINUTES = intPreferencesKey("glyph_idle_minutes")
         private val KEY_RAIN_ENABLED = booleanPreferencesKey("glyph_rain_enabled")
         private val KEY_WEATHER_PLACE = stringPreferencesKey("weather_place")
+        private val KEY_WEATHER_PLACES = stringPreferencesKey("weather_places")
+        private val KEY_RAIN_FORECASTS = stringPreferencesKey("rain_forecasts_by_place")
         private val KEY_RAIN_FORECAST = stringPreferencesKey("rain_forecast")
         private val json = Json { ignoreUnknownKeys = true }
     }
