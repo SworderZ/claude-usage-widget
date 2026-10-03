@@ -295,7 +295,7 @@ class UsageForegroundService : Service() {
     private fun statusText(state: UsageState): String {
         glyph.lastError?.let { if (state.glyphEnabled) return it }
         val percent = state.snapshot?.fiveHour?.utilization?.roundToInt()
-        val head = if (percent == null) "Нет данных" else "5ч: $percent%"
+        val head = state.provider.label + " · " + if (percent == null) "Нет данных" else "5ч: $percent%"
         // Время последнего обновления здесь не для красоты: по нему видно, тикает
         // ли служба вообще.
         val updated = UsageFormat.updatedAt(state.snapshot?.fetchedAtMillis ?: 0L)

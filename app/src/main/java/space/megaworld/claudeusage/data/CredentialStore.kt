@@ -35,19 +35,22 @@ data class Credentials(
  * Секреты в DataStore, зашифрованные AEAD-ключом из Android Keystore (Tink).
  * EncryptedSharedPreferences не используется — он deprecated.
  */
-class CredentialStore(private val context: Context) {
+class CredentialStore(private val context: Context, namespace: String = "claude") {
+
+    private val credentialKey = stringPreferencesKey(if (namespace == "claude") "credentials_aead" else "${namespace}_credentials_aead")
+    private val associatedData = "${namespace}_usage_credentials".toByteArray()
 
     private val aeadMutex = Mutex()
     @Volatile private var cachedAead: Aead? = null
 
     /** Есть ли сохранённая сессия. Дешёвая проверка — без расшифровки. */
     val hasCredentials: Flow<Boolean> =
-        context.appDataStore.data.map { it[KEY_CREDENTIALS] != null }
+        context.appDataStore.data.map { it[credentialKey] != null }
 
     suspend fun load(): Credentials? = withContext(Dispatchers.IO) {
-        val encoded = context.appDataStore.data.first()[KEY_CREDENTIALS] ?: return@withContext null
+        val encoded = context.appDataStore.data.first()[credentialKey] ?: return@withContext null
         runCatching {
-            val plain = aead().decrypt(Base64.decode(encoded, Base64.NO_WRAP), ASSOCIATED_DATA)
+            val plain = aead().decrypt(Base64.decode(encoded, Base64.NO_WRAP), associatedData)
             json.decodeFromString<Credentials>(plain.decodeToString())
         }.getOrNull()
     }
@@ -55,15 +58,15 @@ class CredentialStore(private val context: Context) {
     suspend fun save(credentials: Credentials) = withContext(Dispatchers.IO) {
         val cipher = aead().encrypt(
             json.encodeToString(Credentials.serializer(), credentials).toByteArray(),
-            ASSOCIATED_DATA,
+            associatedData,
         )
         val encoded = Base64.encodeToString(cipher, Base64.NO_WRAP)
-        context.appDataStore.edit { it[KEY_CREDENTIALS] = encoded }
+        context.appDataStore.edit { it[credentialKey] = encoded }
         Unit
     }
 
     suspend fun clear() = withContext(Dispatchers.IO) {
-        context.appDataStore.edit { it.remove(KEY_CREDENTIALS) }
+        context.appDataStore.edit { it.remove(credentialKey) }
         Unit
     }
 
@@ -86,11 +89,9 @@ class CredentialStore(private val context: Context) {
     }
 
     private companion object {
-        val KEY_CREDENTIALS = stringPreferencesKey("credentials_aead")
         const val KEYSET_NAME = "claude_usage_keyset"
         const val KEYSET_PREF_FILE = "claude_usage_keyset_prefs"
         const val MASTER_KEY_URI = "android-keystore://claude_usage_master_key"
-        val ASSOCIATED_DATA = "claude_usage_credentials".toByteArray()
         val json = Json { ignoreUnknownKeys = true }
     }
 }

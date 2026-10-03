@@ -154,8 +154,9 @@ private fun WidgetBody(state: UsageState) {
                 }
             ),
     ) {
+        if (!m.header) Text(state.provider.label, style = TextStyle(color = ColorProvider(TEXT_SECONDARY), fontSize = 10.sp))
         if (m.header) {
-            Header(m)
+            Header(m, state.provider.label)
             Spacer(modifier = GlanceModifier.height(m.headerGap))
         }
 
@@ -182,7 +183,7 @@ private fun WidgetBody(state: UsageState) {
 }
 
 @Composable
-private fun Header(m: Metrics) {
+private fun Header(m: Metrics, provider: String) {
     Row(
         modifier = GlanceModifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically,
@@ -194,14 +195,14 @@ private fun Header(m: Metrics) {
                 .clickable(actionStartActivity<MainActivity>()),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Image(
+            if (provider == "Claude") Image(
                 provider = ImageProvider(R.drawable.ic_claude_mark),
                 contentDescription = "Открыть приложение",
                 modifier = GlanceModifier.size(m.headerIcon),
             )
             Spacer(modifier = GlanceModifier.width(8.dp))
             Text(
-                text = "Claude",
+                text = provider,
                 style = TextStyle(color = ColorProvider(TEXT_PRIMARY), fontSize = m.headerFont),
                 maxLines = 1,
             )

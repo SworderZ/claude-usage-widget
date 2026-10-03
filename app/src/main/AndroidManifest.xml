@@ -56,6 +56,8 @@
             android:exported="false"
             android:label="@string/login_title" />
 
+        <activity android:name=".ui.OpenAiLoginActivity" android:exported="false" android:label="Подключить Codex" />
+
         <activity
             android:name=".ui.ManualLoginActivity"
             android:exported="false"

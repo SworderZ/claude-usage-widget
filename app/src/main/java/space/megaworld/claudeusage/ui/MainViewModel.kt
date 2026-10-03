@@ -39,7 +39,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun refresh() = runBusy {
         when (val result = graph.usageRepository.refresh()) {
             is RefreshResult.Success -> _message.value = null
-            RefreshResult.NotAuthorized -> _message.value = "Нужен вход в claude.ai"
+            RefreshResult.NotAuthorized -> _message.value = "Подключите выбранный аккаунт"
             RefreshResult.SessionExpired -> _message.value = "Сессия истекла, войдите заново"
             is RefreshResult.Failure -> _message.value = result.message
         }
@@ -58,6 +58,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         graph.usageRepository.selectOrganization(uuid)
         graph.usageRepository.refresh()
         UsageWidget().updateAll(getApplication())
+    }
+
+    fun selectProvider(provider: space.megaworld.claudeusage.data.UsageProvider) = runBusy {
+        graph.usageRepository.selectProvider(provider)
+        UsageRefreshWorker.ensureScheduled(getApplication(), graph.settingsStore.currentIntervalMinutes())
+        UsageWidget().updateAll(getApplication())
+        _message.value = null
     }
 
     fun setGlyphEnabled(enabled: Boolean) = runBusy {

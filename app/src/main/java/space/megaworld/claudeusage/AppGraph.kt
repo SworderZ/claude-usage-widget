@@ -16,11 +16,12 @@ class AppGraph private constructor(context: Context) {
     private val appContext: Context = context.applicationContext
 
     val credentialStore: CredentialStore by lazy { CredentialStore(appContext) }
+    val openAiCredentialStore: CredentialStore by lazy { CredentialStore(appContext, "openai") }
     val settingsStore: SettingsStore by lazy { SettingsStore(appContext) }
     val apiClient: ApiClient by lazy { ApiClient() }
 
     val usageRepository: UsageRepository by lazy {
-        UsageRepository(appContext, credentialStore, settingsStore, apiClient)
+        UsageRepository(appContext, credentialStore, settingsStore, apiClient, openAiCredentialStore = openAiCredentialStore)
     }
 
     companion object {

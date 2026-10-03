@@ -17,7 +17,7 @@ class ClaudeUsageApp : Application() {
         // её из своей БД), здесь только страхуемся на случай первого запуска и
         // переустановки: KEEP не тронет уже стоящую задачу.
         CoroutineScope(SupervisorJob() + Dispatchers.Default).launch {
-            if (graph.credentialStore.hasCredentials.first()) {
+            if (graph.credentialStore.hasCredentials.first() || graph.openAiCredentialStore.hasCredentials.first()) {
                 UsageRefreshWorker.ensureScheduled(
                     context = this@ClaudeUsageApp,
                     intervalMinutes = graph.settingsStore.currentIntervalMinutes(),

@@ -6,6 +6,8 @@ import androidx.datastore.preferences.core.stringPreferencesKey
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -17,32 +19,34 @@ import kotlinx.serialization.json.Json
  * Слой намеренно ничего не знает про Compose/Glance — этот же репозиторий потом
  * сможет кормить индикацию Glyph на Nothing Phone (2a).
  */
+@OptIn(ExperimentalCoroutinesApi::class)
 class UsageRepository(
     private val context: Context,
     private val credentialStore: CredentialStore,
     private val settingsStore: SettingsStore,
     private val apiClient: ApiClient,
+    private val openAiCredentialStore: CredentialStore = CredentialStore(context, "openai"),
     private val weatherClient: WeatherClient = WeatherClient(),
 ) {
 
     private val refreshMutex = Mutex()
 
-    private val cache: Flow<CachedUsage> = context.appDataStore.data.map { prefs ->
-        val snapshot = prefs[KEY_SNAPSHOT]?.let { raw ->
+    private fun cache(provider: UsageProvider): Flow<CachedUsage> = context.appDataStore.data.map { prefs ->
+        val snapshot = prefs[snapshotKey(provider)]?.let { raw ->
             runCatching { json.decodeFromString<UsageSnapshot>(raw) }.getOrNull()
         }
-        val status = prefs[KEY_STATUS]?.let { raw ->
+        val status = prefs[statusKey(provider)]?.let { raw ->
             runCatching { UsageStatus.valueOf(raw) }.getOrNull()
         }
-        CachedUsage(snapshot, status, prefs[KEY_ERROR])
+        CachedUsage(snapshot, status, prefs[errorKey(provider)])
     }
 
-    val state: Flow<UsageState> = combine(
-        credentialStore.hasCredentials,
+    val state: Flow<UsageState> = settingsStore.provider.flatMapLatest { provider -> combine(
+        credentialsFor(provider).hasCredentials,
         settingsStore.organizations,
         settingsStore.organizationUuid,
         settingsStore.refreshIntervalMinutes,
-        cache,
+        cache(provider),
     ) { hasCredentials, organizations, organizationUuid, interval, cached ->
         val status = when {
             !hasCredentials -> UsageStatus.NOT_AUTHORIZED
@@ -51,8 +55,9 @@ class UsageRepository(
             else -> cached.status
         }
         UsageState(
+            provider = provider,
             status = status,
-            snapshot = cached.snapshot,
+            snapshot = if (hasCredentials) cached.snapshot else null,
             errorMessage = cached.error,
             organizations = organizations,
             organizationUuid = organizationUuid,
@@ -67,7 +72,7 @@ class UsageRepository(
         state.copy(ambient = ambient)
     }.combine(settingsStore.rainForecast) { state, forecast ->
         state.copy(rainForecast = forecast)
-    }
+    } }
 
     suspend fun currentState(): UsageState = state.first()
 
@@ -76,6 +81,7 @@ class UsageRepository(
      * Если организация ровно одна — выбирает её, иначе выбор остаётся за настройками.
      */
     suspend fun onLoggedIn(cookieHeader: String, userAgent: String): RefreshResult {
+        settingsStore.setProvider(UsageProvider.CLAUDE)
         credentialStore.save(
             Credentials(
                 cookieHeader = cookieHeader,
@@ -113,6 +119,32 @@ class UsageRepository(
 
     /** Один цикл обновления. Вызывается воркером, кнопкой «Обновить» и тапом по виджету. */
     suspend fun refresh(): RefreshResult = refreshMutex.withLock {
+        val provider = settingsStore.provider.first()
+        if (provider == UsageProvider.CODEX) {
+            val credentials = openAiCredentialStore.load() ?: run {
+                writeStatus(UsageStatus.NOT_AUTHORIZED, null, provider)
+                return@withLock RefreshResult.NotAuthorized
+            }
+            return@withLock when (val result = OpenAiUsageClient().fetch(credentials)) {
+                is ApiResult.Success -> {
+                    val snapshot = UsageSnapshot(windows = result.value, fetchedAtMillis = System.currentTimeMillis())
+                    context.appDataStore.edit {
+                        it[snapshotKey(provider)] = json.encodeToString(UsageSnapshot.serializer(), snapshot)
+                        it[statusKey(provider)] = UsageStatus.OK.name
+                        it.remove(errorKey(provider))
+                    }
+                    RefreshResult.Success(snapshot)
+                }
+                ApiResult.Unauthorized -> {
+                    writeStatus(UsageStatus.SESSION_EXPIRED, null, provider)
+                    RefreshResult.SessionExpired
+                }
+                is ApiResult.Failure -> {
+                    writeStatus(UsageStatus.NETWORK_ERROR, result.message, provider)
+                    RefreshResult.Failure(result.message)
+                }
+            }
+        }
         val credentials = credentialStore.load()
         if (credentials == null) {
             writeStatus(UsageStatus.NOT_AUTHORIZED, null)
@@ -147,9 +179,9 @@ class UsageRepository(
                     fetchedAtMillis = System.currentTimeMillis(),
                 )
                 context.appDataStore.edit { prefs ->
-                    prefs[KEY_SNAPSHOT] = json.encodeToString(UsageSnapshot.serializer(), snapshot)
-                    prefs[KEY_STATUS] = UsageStatus.OK.name
-                    prefs.remove(KEY_ERROR)
+                    prefs[snapshotKey(provider)] = json.encodeToString(UsageSnapshot.serializer(), snapshot)
+                    prefs[statusKey(provider)] = UsageStatus.OK.name
+                    prefs.remove(errorKey(provider))
                 }
                 RefreshResult.Success(snapshot)
             }
@@ -166,12 +198,13 @@ class UsageRepository(
 
     /** Полный выход: токены, настройки и кеш. Cookies WebView чистит вызывающая сторона. */
     suspend fun logout() {
-        credentialStore.clear()
-        settingsStore.clear()
+        val provider = settingsStore.provider.first()
+        credentialsFor(provider).clear()
+        if (provider == UsageProvider.CLAUDE) settingsStore.clear()
         context.appDataStore.edit { prefs ->
-            prefs.remove(KEY_SNAPSHOT)
-            prefs.remove(KEY_ERROR)
-            prefs[KEY_STATUS] = UsageStatus.NOT_AUTHORIZED.name
+            prefs.remove(snapshotKey(provider))
+            prefs.remove(errorKey(provider))
+            prefs[statusKey(provider)] = UsageStatus.NOT_AUTHORIZED.name
         }
     }
 
@@ -245,10 +278,38 @@ class UsageRepository(
         if (result is ApiResult.Success) settingsStore.setRainForecast(result.value)
     }
 
-    private suspend fun writeStatus(status: UsageStatus, error: String?) {
+    suspend fun selectProvider(provider: UsageProvider) = refreshMutex.withLock {
+        settingsStore.setProvider(provider)
+    }
+
+    suspend fun importOpenAi(raw: String): RefreshResult = refreshMutex.withLock {
+        val credentials = parseOpenAiCredentials(raw)
+        when (val result = OpenAiUsageClient().fetch(credentials)) {
+            ApiResult.Unauthorized -> RefreshResult.SessionExpired
+            is ApiResult.Failure -> RefreshResult.Failure(result.message)
+            is ApiResult.Success -> {
+                val snapshot = UsageSnapshot(windows = result.value, fetchedAtMillis = System.currentTimeMillis())
+                openAiCredentialStore.save(credentials)
+                context.appDataStore.edit {
+                    it[snapshotKey(UsageProvider.CODEX)] = json.encodeToString(UsageSnapshot.serializer(), snapshot)
+                    it[statusKey(UsageProvider.CODEX)] = UsageStatus.OK.name
+                    it.remove(errorKey(UsageProvider.CODEX))
+                }
+                settingsStore.setProvider(UsageProvider.CODEX)
+                RefreshResult.Success(snapshot)
+            }
+        }
+    }
+
+    private fun credentialsFor(provider: UsageProvider) = if (provider == UsageProvider.CODEX) openAiCredentialStore else credentialStore
+    private fun snapshotKey(provider: UsageProvider) = if (provider == UsageProvider.CLAUDE) KEY_SNAPSHOT else stringPreferencesKey("openai_usage_snapshot")
+    private fun statusKey(provider: UsageProvider) = if (provider == UsageProvider.CLAUDE) KEY_STATUS else stringPreferencesKey("openai_usage_status")
+    private fun errorKey(provider: UsageProvider) = if (provider == UsageProvider.CLAUDE) KEY_ERROR else stringPreferencesKey("openai_usage_error")
+
+    private suspend fun writeStatus(status: UsageStatus, error: String?, provider: UsageProvider = UsageProvider.CLAUDE) {
         context.appDataStore.edit { prefs ->
-            prefs[KEY_STATUS] = status.name
-            if (error == null) prefs.remove(KEY_ERROR) else prefs[KEY_ERROR] = error
+            prefs[statusKey(provider)] = status.name
+            if (error == null) prefs.remove(errorKey(provider)) else prefs[errorKey(provider)] = error
         }
     }
 

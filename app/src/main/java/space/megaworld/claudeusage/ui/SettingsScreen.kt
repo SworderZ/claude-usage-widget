@@ -87,6 +87,7 @@ fun SettingsScreen(
                 .verticalScroll(rememberScrollState())
                 .padding(horizontal = 16.dp, vertical = 8.dp),
         ) {
+            if (state.provider == space.megaworld.claudeusage.data.UsageProvider.CLAUDE) {
             Text(text = "Организация", style = MaterialTheme.typography.titleMedium)
             Spacer(modifier = Modifier.height(8.dp))
             if (state.organizations.isEmpty()) {
@@ -134,6 +135,8 @@ fun SettingsScreen(
             Spacer(modifier = Modifier.height(24.dp))
             HorizontalDivider()
             Spacer(modifier = Modifier.height(16.dp))
+
+            }
 
             Text(text = "Интервал обновления", style = MaterialTheme.typography.titleMedium)
             Spacer(modifier = Modifier.height(4.dp))

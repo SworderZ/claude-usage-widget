@@ -47,11 +47,13 @@ fun MainScreen(
     onLogout: () -> Unit,
     onOpenSettings: () -> Unit,
     onDismissMessage: () -> Unit,
+    onSelectProvider: (space.megaworld.claudeusage.data.UsageProvider) -> Unit,
+    onOpenAiLogin: () -> Unit,
 ) {
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text(text = "Claude Usage") },
+                title = { Text(text = "AI Usage") },
                 actions = {
                     IconButton(onClick = onOpenSettings) {
                         Icon(
@@ -70,6 +72,16 @@ fun MainScreen(
                 .verticalScroll(rememberScrollState())
                 .padding(horizontal = 16.dp, vertical = 8.dp),
         ) {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                space.megaworld.claudeusage.data.UsageProvider.entries.forEach { provider ->
+                    OutlinedButton(onClick = { onSelectProvider(provider) }, enabled = !busy && state.provider != provider) {
+                        Text(provider.label)
+                    }
+                }
+            }
+            Text("Показан расход ${state.provider.label}", style = MaterialTheme.typography.titleMedium)
+            Spacer(modifier = Modifier.height(12.dp))
+            ChatGptAvailability()
             StatusBanner(state = state, message = message, onDismissMessage = onDismissMessage)
 
             if (state.hasData) {
@@ -107,8 +119,8 @@ fun MainScreen(
                 if (state.status == UsageStatus.NOT_AUTHORIZED ||
                     state.status == UsageStatus.SESSION_EXPIRED
                 ) {
-                    Button(onClick = onLogin, enabled = !busy) { Text(text = "Войти") }
-                    OutlinedButton(onClick = onManualLogin, enabled = !busy) {
+                    Button(onClick = if (state.provider == space.megaworld.claudeusage.data.UsageProvider.CODEX) onOpenAiLogin else onLogin, enabled = !busy) { Text(text = "Подключить") }
+                    if (state.provider == space.megaworld.claudeusage.data.UsageProvider.CLAUDE) OutlinedButton(onClick = onManualLogin, enabled = !busy) {
                         Text(text = "Ключ вручную")
                     }
                 }
@@ -129,9 +141,9 @@ fun MainScreen(
 @Composable
 private fun StatusBanner(state: UsageState, message: String?, onDismissMessage: () -> Unit) {
     val banner = when (state.status) {
-        UsageStatus.NOT_AUTHORIZED -> "Не авторизован. Войдите в claude.ai."
+        UsageStatus.NOT_AUTHORIZED -> "Аккаунт ${state.provider.label} не подключён."
         UsageStatus.SESSION_EXPIRED ->
-            "Сессия истекла или Cloudflare требует проверку. Нужен повторный вход."
+            "Сессия ${state.provider.label} истекла или сервер требует проверку. Подключите аккаунт заново."
         UsageStatus.NETWORK_ERROR ->
             "Не удалось обновить данные" + (message?.let { ": $it" } ?: "") + ". Показан кеш."
         UsageStatus.NEVER_LOADED -> "Данные ещё не загружались."

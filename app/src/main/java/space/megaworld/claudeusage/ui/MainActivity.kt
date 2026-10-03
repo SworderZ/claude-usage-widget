@@ -95,6 +95,7 @@ private enum class Screen { MAIN, SETTINGS }
 
 @Composable
 private fun AppRoot(onOpenLogin: () -> Unit, onOpenManualLogin: () -> Unit) {
+    val context = androidx.compose.ui.platform.LocalContext.current
     // Экранов два, NavHost ради них тянуть не стоит.
     var screen by remember { mutableStateOf(Screen.MAIN) }
     val viewModel: MainViewModel = viewModel()
@@ -120,6 +121,8 @@ private fun AppRoot(onOpenLogin: () -> Unit, onOpenManualLogin: () -> Unit) {
             onLogout = viewModel::logout,
             onOpenSettings = { screen = Screen.SETTINGS },
             onDismissMessage = viewModel::dismissMessage,
+            onSelectProvider = viewModel::selectProvider,
+            onOpenAiLogin = { context.startActivity(Intent(context, OpenAiLoginActivity::class.java)) },
         )
         Screen.SETTINGS -> SettingsScreen(
             state = loaded,

@@ -14,6 +14,14 @@ import kotlinx.serialization.json.Json
 /** Несекретные настройки: выбранная организация и интервал обновления. */
 class SettingsStore(private val context: Context) {
 
+    val provider: Flow<UsageProvider> = context.appDataStore.data.map {
+        runCatching { UsageProvider.valueOf(it[KEY_PROVIDER] ?: "CLAUDE") }.getOrDefault(UsageProvider.CLAUDE)
+    }
+
+    suspend fun setProvider(provider: UsageProvider) {
+        context.appDataStore.edit { it[KEY_PROVIDER] = provider.name }
+    }
+
     val organizationUuid: Flow<String?> =
         context.appDataStore.data.map { it[KEY_ORG_UUID] }
 
@@ -142,6 +150,7 @@ class SettingsStore(private val context: Context) {
         val ALLOWED_INTERVALS = listOf(5, 10, 15, 30, 60)
         const val DEFAULT_INTERVAL_MINUTES = 30
 
+        private val KEY_PROVIDER = stringPreferencesKey("usage_provider")
         private val KEY_ORG_UUID = stringPreferencesKey("organization_uuid")
         private val KEY_ORGS = stringPreferencesKey("organizations")
         private val KEY_INTERVAL = intPreferencesKey("refresh_interval_minutes")
