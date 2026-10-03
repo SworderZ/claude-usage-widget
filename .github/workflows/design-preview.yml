@@ -1,0 +1,49 @@
+name: Android design previews
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  preview:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@3f5f9adaf7d9fecd50b5935e54106014257a94e6 # v6.4.0
+      - uses: android-actions/setup-android@be39fa834029ff78f1a44aa3bb0819b8fc2bd8fd # v4.0.4
+        with:
+          log-accepted-android-sdk-licenses: false
+      - name: Install Android and emulator
+        run: sdkmanager 'platforms;android-35' 'build-tools;35.0.0' 'emulator' 'system-images;android-35;default;x86_64'
+      - name: Build preview app
+        run: bash ./gradlew assembleDebug --console=plain
+      - name: Capture real Android layouts
+        run: |
+          test -e /dev/kvm
+          sudo chmod 666 /dev/kvm
+          echo no | avdmanager create avd --name tinyglyph-preview --package 'system-images;android-35;default;x86_64' --device pixel_2
+          "$ANDROID_HOME/emulator/emulator" -avd tinyglyph-preview -no-window -no-audio -no-boot-anim -no-snapshot -gpu swiftshader -memory 2048 -cores 2 >emulator.log 2>&1 &
+          emulator_pid=$!
+          trap 'kill "$emulator_pid" || true' EXIT
+          timeout 240 adb wait-for-device
+          timeout 240 bash -c 'until [ "$(adb shell getprop sys.boot_completed | tr -d "\r")" = 1 ]; do sleep 2; done'
+          adb shell input keyevent 82
+          adb install -r app/build/outputs/apk/debug/app-debug.apk
+          python3 scripts/capture_previews.py
+      - name: Upload screenshots
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: android-design-previews
+          path: |
+            app/build/design-preview/
+            emulator.log
+          if-no-files-found: error
+          retention-days: 14
