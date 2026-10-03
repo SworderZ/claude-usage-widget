@@ -1,23 +1,29 @@
 package space.megaworld.claudeusage.data
 
 import kotlinx.serialization.Serializable
+import kotlin.math.roundToInt
 
-/** Физические короткие каналы Glyph; C остаётся полосой лимита. */
+/** Физические короткие каналы Glyph; C настраивается как отдельная полоса. */
 enum class AmbientChannel { A, B }
 
 enum class GlyphChannelMode(val label: String) {
     OFF("Выкл."), RAIN("Дождь"), IDLE("Простой"),
 }
 
-/** Назначение A и B хранится отдельно; город и порог общие для выбранных функций. */
+enum class GlyphStripMode(val label: String) {
+    USAGE("Лимиты"), RAIN("Осадки"), OFF("Выкл."),
+}
+
+/** Назначения A/B/C; город и порог общие для одинаковых функций. */
 data class AmbientSettings(
     val channelA: GlyphChannelMode = GlyphChannelMode.OFF,
     val channelB: GlyphChannelMode = GlyphChannelMode.OFF,
+    val stripMode: GlyphStripMode = GlyphStripMode.USAGE,
     val idleThresholdMinutes: Int = DEFAULT_IDLE_MINUTES,
     val place: WeatherPlace? = null,
 ) {
     val idleEnabled: Boolean get() = channelA == GlyphChannelMode.IDLE || channelB == GlyphChannelMode.IDLE
-    val rainEnabled: Boolean get() = channelA == GlyphChannelMode.RAIN || channelB == GlyphChannelMode.RAIN
+    val rainEnabled: Boolean get() = channelA == GlyphChannelMode.RAIN || channelB == GlyphChannelMode.RAIN || stripMode == GlyphStripMode.RAIN
     val wantsWeather: Boolean get() = rainEnabled && place != null
 
     fun modeFor(channel: AmbientChannel): GlyphChannelMode = if (channel == AmbientChannel.A) channelA else channelB
@@ -26,6 +32,13 @@ data class AmbientSettings(
         GlyphChannelMode.OFF -> GlyphLight.OFF
         GlyphChannelMode.RAIN -> GlyphLight.forRain(rainProbability)
         GlyphChannelMode.IDLE -> GlyphLight.forIdle(idleMillis, idleThresholdMinutes)
+    }
+
+    /** null означает отсутствие данных или выключенную полосу; 0 — настоящий нулевой процент. */
+    fun stripPercent(utilization: Double?, rainProbability: Int?): Int? = when (stripMode) {
+        GlyphStripMode.USAGE -> utilization?.takeIf { it.isFinite() }?.roundToInt()?.coerceIn(0, 100)
+        GlyphStripMode.RAIN -> rainProbability?.coerceIn(0, 100)
+        GlyphStripMode.OFF -> null
     }
 
     companion object {

@@ -25,6 +25,7 @@ import space.megaworld.claudeusage.AppGraph
 import space.megaworld.claudeusage.R
 import space.megaworld.claudeusage.data.AmbientChannel
 import space.megaworld.claudeusage.data.GlyphChannelMode
+import space.megaworld.claudeusage.data.GlyphStripMode
 import space.megaworld.claudeusage.data.GlyphLight
 import space.megaworld.claudeusage.data.SettingsStore
 import space.megaworld.claudeusage.data.UsageState
@@ -190,7 +191,8 @@ class UsageForegroundService : Service() {
     }
 
     /**
-     * Кадр по текущему состоянию: полоса C — расход лимита, A и B — выбранные функции. Выключенные каналы просто остаются погашенными, и тогда
+     * Кадр по текущему состоянию: C — выбранный процент, A/B — выбранные функции.
+     * Выключенные каналы просто остаются погашенными, и тогда
      * контроллер сам вернётся к родному displayProgress для полосы C.
      */
     private fun frameFor(state: UsageState): GlyphController.Request {
@@ -201,7 +203,7 @@ class UsageForegroundService : Service() {
                 state.ambient.lightFor(channel, idleTracker.idleMillis, state.rainForecast?.probabilityPercent)
             }
         return GlyphController.Request(
-            cPercent = state.snapshot?.fiveHour?.utilization?.roundToInt(),
+            cPercent = state.ambient.stripPercent(state.snapshot?.fiveHour?.utilization, state.rainForecast?.probabilityPercent),
             mode = state.glyphRenderMode,
             aLight = light(AmbientChannel.A),
             bLight = light(AmbientChannel.B),
@@ -331,10 +333,20 @@ class UsageForegroundService : Service() {
     private fun statusText(state: UsageState): String {
         glyph.lastError?.let { if (state.glyphEnabled) return it }
         val percent = state.snapshot?.fiveHour?.utilization?.roundToInt()
-        val head = state.provider.displayLabel() + " · " + if (percent == null) "Нет данных" else "5ч: $percent%"
+        val head = when {
+            !state.glyphEnabled || state.ambient.stripMode == GlyphStripMode.USAGE ->
+                state.provider.displayLabel() + " · " + if (percent == null) "Нет данных" else "5ч: $percent%"
+            state.ambient.stripMode == GlyphStripMode.RAIN -> state.rainForecast?.let {
+                "C: осадки ${it.probabilityPercent}% · " + (state.ambient.place?.name ?: "город не выбран")
+            } ?: "C: осадки · нет прогноза"
+            else -> "C: выключена"
+        }
         // Время последнего обновления здесь не для красоты: по нему видно, тикает
         // ли служба вообще.
-        val updated = UsageFormat.updatedAt(state.snapshot?.fetchedAtMillis ?: 0L)
+        val updated = UsageFormat.updatedAt(
+            if (state.glyphEnabled && state.ambient.stripMode == GlyphStripMode.RAIN) state.rainForecast?.fetchedAtMillis ?: 0L
+            else state.snapshot?.fetchedAtMillis ?: 0L,
+        )
         val channels = if (!state.glyphEnabled) "" else AmbientChannel.entries.joinToString("") { channel ->
             val detail = if (channelUnderTest == channel && SystemClock.elapsedRealtime() < channelPreviewUntil) {
                 "проверка 5 секунд"

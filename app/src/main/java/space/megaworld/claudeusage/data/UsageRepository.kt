@@ -30,6 +30,7 @@ class UsageRepository(
 ) {
 
     private val refreshMutex = Mutex()
+    private val weatherMutex = Mutex()
 
     private fun cache(provider: UsageProvider): Flow<CachedUsage> = context.appDataStore.data.map { prefs ->
         val snapshot = prefs[snapshotKey(provider)]?.let { raw ->
@@ -243,6 +244,11 @@ class UsageRepository(
         if (mode == GlyphChannelMode.RAIN) refreshWeatherIfStale()
     }
 
+    suspend fun setStripMode(mode: GlyphStripMode) {
+        settingsStore.setStripMode(mode)
+        if (mode == GlyphStripMode.RAIN) refreshWeatherIfStale()
+    }
+
     suspend fun setIdleThresholdMinutes(minutes: Int) {
         settingsStore.setIdleThresholdMinutes(minutes)
     }
@@ -254,8 +260,10 @@ class UsageRepository(
     suspend fun selectWeatherPlace(query: String): ApiResult<WeatherPlace> {
         return when (val result = weatherClient.geocode(query)) {
             is ApiResult.Success -> {
-                settingsStore.setWeatherPlace(result.value)
-                refreshWeather(result.value)
+                weatherMutex.withLock {
+                    settingsStore.setWeatherPlace(result.value)
+                    refreshWeather(result.value)
+                }
                 result
             }
             ApiResult.Unauthorized -> ApiResult.Failure("Сервис погоды отказал")
@@ -263,7 +271,7 @@ class UsageRepository(
         }
     }
 
-    suspend fun clearWeatherPlace() {
+    suspend fun clearWeatherPlace() = weatherMutex.withLock {
         settingsStore.setWeatherPlace(null)
     }
 
@@ -274,12 +282,12 @@ class UsageRepository(
      * ежеминутно, а осадки на три часа вперёд — нет, и дёргать чужой бесплатный
      * сервис каждые пять минут незачем.
      */
-    suspend fun refreshWeatherIfStale() {
+    suspend fun refreshWeatherIfStale() = weatherMutex.withLock {
         val ambient = settingsStore.currentAmbient()
-        val place = ambient.place?.takeIf { ambient.rainEnabled } ?: return
+        val place = ambient.place?.takeIf { ambient.rainEnabled } ?: return@withLock
         val previous = settingsStore.currentRainForecast()
         val age = System.currentTimeMillis() - (previous?.fetchedAtMillis ?: 0L)
-        if (previous != null && age < WEATHER_TTL_MILLIS) return
+        if (previous != null && age < WEATHER_TTL_MILLIS) return@withLock
         refreshWeather(place)
     }
 

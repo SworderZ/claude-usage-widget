@@ -71,7 +71,7 @@ class SettingsStore internal constructor(private val dataStore: DataStore<Prefer
     }
 
     /**
-     * Короткие каналы A и B. Сложены в один поток, а не разложены по четыре:
+     * Настройки каналов A/B/C. Сложены в один поток:
      * combine в [UsageRepository] уже упёрся в предел по числу источников.
      */
     val ambient: Flow<AmbientSettings> = dataStore.data.map { prefs ->
@@ -81,6 +81,8 @@ class SettingsStore internal constructor(private val dataStore: DataStore<Prefer
                 ?: if (prefs[KEY_RAIN_ENABLED] == true) GlyphChannelMode.RAIN else GlyphChannelMode.OFF,
             channelB = prefs[KEY_CHANNEL_B_MODE]?.let { runCatching { GlyphChannelMode.valueOf(it) }.getOrNull() }
                 ?: if (prefs[KEY_IDLE_ENABLED] == true) GlyphChannelMode.IDLE else GlyphChannelMode.OFF,
+            stripMode = prefs[KEY_STRIP_MODE]?.let { runCatching { GlyphStripMode.valueOf(it) }.getOrNull() }
+                ?: GlyphStripMode.USAGE,
             idleThresholdMinutes = prefs[KEY_IDLE_MINUTES]
                 ?.takeIf { it in AmbientSettings.ALLOWED_IDLE_MINUTES }
                 ?: AmbientSettings.DEFAULT_IDLE_MINUTES,
@@ -104,6 +106,10 @@ class SettingsStore internal constructor(private val dataStore: DataStore<Prefer
     suspend fun setChannelMode(channel: AmbientChannel, mode: GlyphChannelMode) {
         val key = if (channel == AmbientChannel.A) KEY_CHANNEL_A_MODE else KEY_CHANNEL_B_MODE
         dataStore.edit { it[key] = mode.name }
+    }
+
+    suspend fun setStripMode(mode: GlyphStripMode) {
+        dataStore.edit { it[KEY_STRIP_MODE] = mode.name }
     }
 
     suspend fun setIdleThresholdMinutes(minutes: Int) {
@@ -174,6 +180,7 @@ class SettingsStore internal constructor(private val dataStore: DataStore<Prefer
         private val KEY_INTERVAL = intPreferencesKey("refresh_interval_minutes")
         private val KEY_GLYPH_ENABLED = booleanPreferencesKey("glyph_enabled")
         private val KEY_GLYPH_MODE = stringPreferencesKey("glyph_render_mode")
+        private val KEY_STRIP_MODE = stringPreferencesKey("glyph_strip_mode")
         private val KEY_CHANNEL_A_MODE = stringPreferencesKey("glyph_channel_a_mode")
         private val KEY_CHANNEL_B_MODE = stringPreferencesKey("glyph_channel_b_mode")
         // Старые флаги читаем только при миграции; явный выбор канала имеет приоритет.

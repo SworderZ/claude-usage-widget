@@ -21,8 +21,8 @@ import space.megaworld.claudeusage.data.AmbientChannel
 import space.megaworld.claudeusage.data.GlyphChannelMode
 import space.megaworld.claudeusage.data.AmbientSettings
 import space.megaworld.claudeusage.data.GlyphRenderMode
+import space.megaworld.claudeusage.data.GlyphStripMode
 import space.megaworld.claudeusage.data.RainForecast
-import space.megaworld.claudeusage.data.UsageProvider
 import space.megaworld.claudeusage.data.UsageState
 import space.megaworld.claudeusage.data.WeatherPlace
 import space.megaworld.claudeusage.glyph.GlyphSupport
@@ -37,6 +37,7 @@ fun GlyphScreen(
     onDismissMessage: () -> Unit,
     onToggleGlyph: (Boolean) -> Unit,
     onSelectGlyphMode: (GlyphRenderMode) -> Unit,
+    onSelectStripMode: (GlyphStripMode) -> Unit,
     onSelectChannelMode: (AmbientChannel, GlyphChannelMode) -> Unit,
     onTestChannel: (AmbientChannel) -> Unit,
     onSelectIdleMinutes: (Int) -> Unit,
@@ -73,15 +74,22 @@ fun GlyphScreen(
                 Spacer(Modifier.height(20.dp))
                 HorizontalDivider()
                 Spacer(Modifier.height(16.dp))
-                AmbientSetting(
-                    settings = state.ambient, forecast = state.rainForecast, busy = busy,
-                    onSelectChannelMode = onSelectChannelMode, onTestChannel = onTestChannel,
-                    onSelectIdleMinutes = onSelectIdleMinutes, onSelectPlace = onSelectPlace, onClearPlace = onClearPlace,
-                )
+                GlyphSetting(state = state, busy = busy, onSelectMode = onSelectGlyphMode, onSelectStripMode = onSelectStripMode)
                 Spacer(Modifier.height(20.dp))
                 HorizontalDivider()
                 Spacer(Modifier.height(16.dp))
-                GlyphSetting(provider = state.provider, mode = state.glyphRenderMode, busy = busy, onSelectMode = onSelectGlyphMode)
+                AmbientSetting(
+                    settings = state.ambient, busy = busy,
+                    onSelectChannelMode = onSelectChannelMode, onTestChannel = onTestChannel,
+                    onSelectIdleMinutes = onSelectIdleMinutes,
+                )
+                if (state.ambient.rainEnabled) {
+                    Spacer(Modifier.height(20.dp))
+                    HorizontalDivider()
+                    Spacer(Modifier.height(16.dp))
+                    WeatherSetting(settings = state.ambient, forecast = state.rainForecast, busy = busy,
+                        onSelectPlace = onSelectPlace, onClearPlace = onClearPlace)
+                }
             }
             Spacer(Modifier.height(24.dp))
             Card(modifier = Modifier.fillMaxWidth()) {
@@ -109,13 +117,10 @@ fun GlyphScreen(
 @Composable
 private fun AmbientSetting(
     settings: AmbientSettings,
-    forecast: RainForecast?,
     busy: Boolean,
     onSelectChannelMode: (AmbientChannel, GlyphChannelMode) -> Unit,
     onTestChannel: (AmbientChannel) -> Unit,
     onSelectIdleMinutes: (Int) -> Unit,
-    onSelectPlace: (String) -> Unit,
-    onClearPlace: () -> Unit,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Text("Каналы A и B", style = MaterialTheme.typography.titleMedium)
@@ -143,19 +148,6 @@ private fun AmbientSetting(
                     Text("$minutes мин", modifier = Modifier.padding(start = 8.dp))
                 }
             }
-        }
-        if (settings.rainEnabled) {
-            HorizontalDivider()
-            Text("Прогноз дождя", style = MaterialTheme.typography.titleMedium)
-            Text("Яркость показывает вероятность осадков на ближайшие три часа. Ниже 30% подсветка погашена.",
-                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            PlacePicker(place = settings.place, busy = busy, onSelectPlace = onSelectPlace, onClearPlace = onClearPlace)
-            forecast?.let {
-                Text("Последний прогноз: ${it.probabilityPercent}% · " + UsageFormat.updatedAt(it.fetchedAtMillis),
-                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-            Text("Прогноз Open-Meteo обновляется раз в полчаса. Введите город; доступ к геолокации и регистрация не нужны.",
-                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
 }
@@ -191,6 +183,34 @@ private fun ChannelModePicker(
             Text("Проверка включает полную яркость и возвращает обычную индикацию. Экран можно оставить включённым.",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
+    }
+}
+
+@Composable
+private fun WeatherSetting(
+    settings: AmbientSettings,
+    forecast: RainForecast?,
+    busy: Boolean,
+    onSelectPlace: (String) -> Unit,
+    onClearPlace: () -> Unit,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Text("Город и прогноз осадков", style = MaterialTheme.typography.titleMedium)
+        Text("Используется самая высокая почасовая вероятность осадков на ближайшие три часа. " +
+            "Город общий для всех каналов, которым назначена погода.",
+            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        if (settings.channelA == GlyphChannelMode.RAIN || settings.channelB == GlyphChannelMode.RAIN) {
+            Text("Для коротких A/B вероятность задаёт яркость; ниже 30% они погашены. " +
+                "В режиме «Осадки» C показывает процент длиной заполнения.",
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        PlacePicker(place = settings.place, busy = busy, onSelectPlace = onSelectPlace, onClearPlace = onClearPlace)
+        forecast?.let {
+            Text("Последний прогноз: ${it.probabilityPercent}% · " + UsageFormat.updatedAt(it.fetchedAtMillis),
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        Text("Прогноз Open-Meteo обновляется в фоне, не чаще раза в полчаса. Доступ к геолокации и регистрация не нужны.",
+            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
 
@@ -250,52 +270,56 @@ private fun PlacePicker(
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun GlyphSetting(
-    provider: UsageProvider,
-    mode: GlyphRenderMode,
+    state: UsageState,
     busy: Boolean,
     onSelectMode: (GlyphRenderMode) -> Unit,
+    onSelectStripMode: (GlyphStripMode) -> Unit,
 ) {
+    val stripMode = state.ambient.stripMode
+    val percent = state.ambient.stripPercent(state.snapshot?.fiveHour?.utilization, state.rainForecast?.probabilityPercent)
     Column {
-        Text(text = "C: лимит " + provider.displayLabel(), style = MaterialTheme.typography.titleMedium)
-        Text(
-            text = "Полоса показывает расход 5-часового окна ИИ, выбранного на вкладке «Лимиты».",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-
-        // Как именно полоса заполняется, зависит от прошивки — вариант подбирается глазами.
-        Spacer(modifier = Modifier.height(12.dp))
-        Text(text = "Отрисовка полосы", style = MaterialTheme.typography.titleSmall)
-        Text(
-            text = "Если заливка идёт не с той стороны или выглядит неправильно, " +
-                "переключите вариант и посмотрите на полосу.",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-        Spacer(modifier = Modifier.height(4.dp))
-        GlyphRenderMode.entries.forEach { option ->
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable(enabled = !busy) { onSelectMode(option) }
-                    .padding(vertical = 6.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                RadioButton(
-                    selected = option == mode,
-                    onClick = { onSelectMode(option) },
-                    enabled = !busy,
-                )
-                Text(
-                    text = option.label,
-                    style = MaterialTheme.typography.bodyLarge,
-                    modifier = Modifier.padding(start = 8.dp),
-                )
+        Card(modifier = Modifier.fillMaxWidth()) {
+            Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("Канал C · полоса", style = MaterialTheme.typography.titleMedium)
+                SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
+                    GlyphStripMode.entries.forEachIndexed { index, option ->
+                        SegmentedButton(selected = stripMode == option, onClick = { onSelectStripMode(option) }, enabled = !busy,
+                            shape = SegmentedButtonDefaults.itemShape(index, GlyphStripMode.entries.size),
+                            label = { Text(option.label) }, icon = {})
+                    }
+                }
+                Text(when (stripMode) {
+                    GlyphStripMode.USAGE -> "Расход 5-часового окна " + state.provider.displayLabel() + "."
+                    GlyphStripMode.RAIN -> "Вероятность осадков: 70% — заполнено 70% полосы. 0% — пустая, 100% — вся полоса."
+                    GlyphStripMode.OFF -> "Полоса C погашена."
+                }, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                if (percent != null) {
+                    Text("Сейчас: $percent%", style = MaterialTheme.typography.titleLarge, color = MaterialTheme.colorScheme.primary)
+                } else if (stripMode != GlyphStripMode.OFF) {
+                    Text(when {
+                        stripMode == GlyphStripMode.USAGE -> "Нет данных о лимите."
+                        state.ambient.place == null -> "Выберите город в блоке прогноза ниже."
+                        else -> "Прогноз ещё не загружен."
+                    }, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
             }
         }
-
+        if (stripMode != GlyphStripMode.OFF) {
+            Spacer(modifier = Modifier.height(12.dp))
+            Text(text = "Отрисовка полосы", style = MaterialTheme.typography.titleSmall)
+            Text(text = "Если заполнение идёт не с той стороны или выглядит неправильно, переключите вариант.",
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            GlyphRenderMode.entries.forEach { option ->
+                Row(modifier = Modifier.fillMaxWidth().clickable(enabled = !busy) { onSelectMode(option) }.padding(vertical = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically) {
+                    RadioButton(selected = option == state.glyphRenderMode, onClick = { onSelectMode(option) }, enabled = !busy)
+                    Text(option.label, modifier = Modifier.padding(start = 8.dp), style = MaterialTheme.typography.bodyLarge)
+                }
+            }
+        }
     }
 }
 

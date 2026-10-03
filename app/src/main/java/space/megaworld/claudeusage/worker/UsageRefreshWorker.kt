@@ -25,6 +25,7 @@ class UsageRefreshWorker(
     override suspend fun doWork(): Result {
         val repository = AppGraph.get(applicationContext).usageRepository
         val results = repository.refreshDisplayedSources()
+        repository.refreshWeatherIfStale()
         // Виджет перерисовываем в любом случае: ошибка тоже меняет его вид.
         UsageWidget().updateAll(applicationContext)
 

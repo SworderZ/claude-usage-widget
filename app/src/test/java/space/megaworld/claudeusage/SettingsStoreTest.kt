@@ -19,6 +19,8 @@ import org.junit.Test
 import org.junit.rules.TemporaryFolder
 import space.megaworld.claudeusage.data.AmbientChannel
 import space.megaworld.claudeusage.data.GlyphChannelMode
+import space.megaworld.claudeusage.data.GlyphStripMode
+import space.megaworld.claudeusage.data.WeatherPlace
 import space.megaworld.claudeusage.data.SettingsStore
 import space.megaworld.claudeusage.data.UsageProvider
 
@@ -61,6 +63,7 @@ class SettingsStoreTest {
     @Test
     fun `widget and Glyph choices survive reopening the settings file`() = runTest {
         val file = File(temporaryFolder.root, "saved.preferences_pb")
+        val place = WeatherPlace("Москва", 55.75, 37.62)
         withStore(file) { settings, _ ->
             settings.setWidgetProvider(UsageProvider.CODEX)
             settings.setProvider(UsageProvider.CLAUDE)
@@ -68,6 +71,8 @@ class SettingsStoreTest {
             settings.setChannelMode(AmbientChannel.B, GlyphChannelMode.IDLE)
             settings.setChannelMode(AmbientChannel.A, GlyphChannelMode.RAIN)
             settings.setIdleThresholdMinutes(60)
+            settings.setStripMode(GlyphStripMode.RAIN)
+            settings.setWeatherPlace(place)
         }
         withStore(file) { settings, _ ->
             assertEquals(UsageProvider.CODEX, settings.widgetProvider.first())
@@ -77,6 +82,8 @@ class SettingsStoreTest {
             assertEquals(60, settings.ambient.first().idleThresholdMinutes)
             assertEquals(GlyphChannelMode.RAIN, settings.ambient.first().channelA)
             assertEquals(GlyphChannelMode.IDLE, settings.ambient.first().channelB)
+            assertEquals(GlyphStripMode.RAIN, settings.ambient.first().stripMode)
+            assertEquals(place, settings.ambient.first().place)
         }
     }
 
@@ -103,6 +110,7 @@ class SettingsStoreTest {
             val ambient = settings.ambient.first()
             assertEquals(GlyphChannelMode.RAIN, ambient.channelA)
             assertEquals(GlyphChannelMode.IDLE, ambient.channelB)
+            assertEquals(GlyphStripMode.USAGE, ambient.stripMode)
         }
     }
 

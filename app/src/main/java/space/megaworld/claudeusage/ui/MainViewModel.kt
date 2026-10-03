@@ -15,6 +15,7 @@ import space.megaworld.claudeusage.AppGraph
 import space.megaworld.claudeusage.glyph.UsageForegroundService
 import space.megaworld.claudeusage.data.AmbientChannel
 import space.megaworld.claudeusage.data.GlyphChannelMode
+import space.megaworld.claudeusage.data.GlyphStripMode
 import space.megaworld.claudeusage.data.ApiResult
 import space.megaworld.claudeusage.data.GlyphRenderMode
 import space.megaworld.claudeusage.data.RefreshResult
@@ -93,6 +94,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun setChannelMode(channel: AmbientChannel, mode: GlyphChannelMode) = runBusy {
         graph.usageRepository.setChannelMode(channel, mode)
+    }
+
+    fun setStripMode(mode: GlyphStripMode) = runBusy {
+        graph.usageRepository.setStripMode(mode)
     }
 
     fun setIdleThresholdMinutes(minutes: Int) = runBusy {

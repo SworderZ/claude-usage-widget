@@ -12,7 +12,7 @@ import space.megaworld.claudeusage.data.GlyphRenderMode
 import kotlin.math.roundToInt
 
 /**
- * Полоса C на Nothing Phone (2a) как индикатор 5-часового окна лимита, плюс
+ * Полоса C на Nothing Phone (2a) как индикатор выбранного процента, плюс
  * короткие каналы A и B под амбиентные состояния (простой телефона, дождь).
  *
  * Обёртка над Glyph Developer Kit (`com.nothing.ketchum`, AAR лежит в `app/libs`).
@@ -172,7 +172,7 @@ class GlyphController(context: Context) {
     }
 
     /**
-     * Один кадр на все каналы: первые N сегментов полосы C под расход лимита,
+     * Один кадр на все каналы: первые N сегментов полосы C под выбранный процент,
      * A и B — своей яркостью.
      *
      * Анимации тут нет намеренно. `animate()` задаёт период на весь кадр, а не на
