@@ -2,305 +2,138 @@
 
 ![tinyGlyph](branding/tinyGlyph.svg)
 
-Android-приложение с виджетом лимитов Claude и Codex и индикацией Glyph на Nothing
-Phone (2a)/(2a) Plus. Полоса показывает расход лимитов или вероятность осадков,
-коротким каналам можно назначить дождь и время с выключения экрана. Данные о лимитах
-и прогнозы берутся с серверов.
+tinyGlyph shows Claude and Codex usage in Android home-screen widgets. On Nothing
+Phone (2a) and Phone (2a) Plus, the Glyph lights also show usage, rain probability,
+and time with the screen off.
 
-## Сборка
+[Download the latest version](https://github.com/SworderZ/claude-usage-widget/releases/latest)
 
-Нужны JDK 17 и Android SDK с платформой `android-35`.
+## Features
 
-```
-./gradlew assembleDebug
-```
+- Home-screen widgets show five-hour and weekly usage, reset times, and elapsed time.
+- Choose the widget's AI provider independently from the account open in the app.
+- Claude uses orange accents; GPT uses white accents on a dark background.
+- Assign rain probability, screen-off time, or Off independently to channels A and B.
+- Use strip C for AI usage, rain probability, or Off.
+- Save multiple cities and switch between their weather forecasts.
+- A persistent notification shows the current Glyph state and last update.
 
-APK окажется в `app/build/outputs/apk/debug/app-debug.apk`.
+## Getting started
 
-Путь к SDK берётся из `local.properties` (`sdk.dir`). На этой машине toolchain лежит на `E:`,
-поэтому для сборки из свежей консоли:
+Install the APK from the latest release and open tinyGlyph. When updating, install
+it over the existing app to keep your accounts, cities, widgets, and Glyph settings.
 
-```
-export JAVA_HOME=E:/android-tools/jdk17
-export ANDROID_HOME=E:/android-tools/sdk
-export GRADLE_USER_HOME=E:/android-tools/gradle-home
-./gradlew assembleDebug
-```
+### Connect Claude
 
-Тесты и линт: `./gradlew testDebugUnitTest lintDebug`.
+Choose Claude on the Limits tab and sign in. If the embedded sign-in page does not
+work, use the manual-key option to open Claude in a browser and paste a `sessionKey`
+or cookie header from your signed-in session.
 
-## Как пользоваться
+Add the widget from your launcher's widget picker. Set its provider under Settings.
+Tap the refresh button to update it; tap the provider name to open that account.
 
-1. Запустить приложение и войти одним из двух способов:
-   - **«Войти»** — откроется WebView с обычной страницей входа claude.ai; после успешного
-     логина приложение само подхватит cookie и закроет WebView.
-   - **«Ключ вручную»** — если claude.ai не пускает WebView. Экран открывает сайт во
-     внешнем браузере и принимает скопированный оттуда `sessionKey`. Cookie чужого
-     браузера приложение прочитать не может (песочница Android), поэтому именно копипаст.
-2. Добавить виджет на рабочий стол. Поддерживаются два размера:
-   2x1 (только проценты) и 4x2 (полосы прогресса, время до сброса, время обновления).
-3. Тап по виджету — немедленное обновление. Если сессии нет или она протухла,
-   тап открывает экран логина.
+### Connect Codex
 
-Цвет полосы: до 70 % обычный, 70–90 % жёлтый, свыше 90 % красный.
-Когда данные устарели (нет сети или истекла сессия), последние значения показываются
-приглушённо, а в подписи появляется причина.
+Choose GPT on the Limits tab and import `.codex/auth.json` from a computer where
+Codex is signed in. The app stores the access token and account ID in encrypted
+storage. When that token expires, import a fresh file.
 
-## Glyph на Nothing Phone (2a)
+The file contains account secrets. Delete the transferred copy after import and
+keep it out of repositories and messages.
 
-Полоса C показывает расход 5-часового окна или вероятность осадков. Режим
-выбирается на отдельной вкладке **Glyph**; индикация поддерживается на Phone (2a) и (2a) Plus.
+**The GPT option shows Codex usage limits.** A remaining-message counter for ordinary
+ChatGPT conversations is not available in this app.
 
-Используется Glyph Developer Kit (`com.nothing.ketchum`). На Maven его нет, поэтому AAR
-лежит в `app/libs/glyph-matrix-sdk-2.0.aar`, взят из
-[официального репозитория Nothing](https://github.com/Nothing-Developer-Programme/Glyph-Developer-Kit).
+If your VPN routes selected apps, include tinyGlyph (`space.megaworld.claudeusage`).
+Browser access alone does not confirm that tinyGlyph uses the same route. The
+connection screen includes an OpenAI connectivity check and reports network or
+access errors separately from an expired session.
 
-**Чтобы полоса заработала, нужно один раз разрешить отладку Glyph с компьютера:**
+## Glyph setup
 
-```
+Glyph indicators are supported on Nothing Phone (2a) and Phone (2a) Plus. The app
+also runs on other Android phones, where the AI widgets remain available.
+
+The current Glyph build uses developer access. Connect your phone to a computer
+with ADB and enable it:
+
+```sh
 adb shell settings put global nt_glyph_interface_debug_enable 1
 ```
 
-Разрешение сбрасывается через 48 часов — это ограничение SDK для отладочного ключа
-(`NothingKey=test` в манифесте). Для публикации нужен настоящий ключ от Nothing либо
-targetSdk Android 16+, где ключ больше не требуется.
+This permission expires after 48 hours. If the lights stop working, check the
+service notification and renew developer access.
 
-Ограничения SDK, а не этого приложения:
+Open the Glyph tab and turn on the main switch. All channel settings are on this tab.
 
-- работает только на устройствах Nothing с Android 14 и новее;
-- **в свёрнутом виде работает, вопреки документации.** Nothing пишет «only foreground
-  applications», но проверку делает системный сервис Nothing OS, а не сам AAR — в его
-  байткоде её нет. Полосу ведёт foreground service (`UsageForegroundService`) со
-  служебным уведомлением, и этого оказалось достаточно: проверено на Phone (2a)
-  2026-09-30, полоса продолжает гореть после сворачивания приложения. На других
-  прошивках и моделях поведение может отличаться — если сервис откажет, причина
-  появится в тексте уведомления.
+### Channels A and B
 
-Отдельно стоит знать, чего сделать нельзя: системная функция Glyph Progress (та, что
-показывает доставку Uber, Zomato или Додо) — не публичный API. Это системное приложение
-Nothing, которое разбирает чужие уведомления через NotificationListener по захардкоженному
-списку приложений. Повесить своё уведомление и попасть в эту индикацию невозможно.
+Each short channel has three choices:
 
-AAR объявляет `minSdkVersion 33`, приложение живёт с 26 — конфликт снят через
-`tools:overrideLibrary`, а весь код Glyph вызывается только после проверки модели, так
-что на других телефонах он не трогается.
+| Mode | Behavior |
+| --- | --- |
+| Off | Keeps the channel dark. |
+| Rain | Uses brightness to show rain probability for the selected city. |
+| Idle | Starts glowing after the screen has been off for the chosen duration. |
 
-## Архитектура
+Idle thresholds are 15, 30, 60, or 120 minutes. The light grows brighter after the
+threshold and reaches full brightness at four times that duration. Turning the
+screen on resets the timer; movement is not tracked.
 
+Use either channel's five-second test button to check its light without waiting
+for the timer. Allow exact alarms when prompted for more timely screen-off
+indication while the phone sleeps.
+
+### Strip C
+
+Choose Usage, Rain, or Off. In Usage mode, the strip shows five-hour usage for the
+provider selected on the Limits tab. In Rain mode, a 70% probability fills roughly
+70% of the strip, including values below the short channels' 30% threshold.
+
+The rendering options let you reverse the fill direction or use individual
+segments if the default progress display looks wrong on your phone.
+
+### Cities and weather
+
+Add cities in the weather section and tap a saved city to select its forecast.
+A newly added city becomes selected immediately. The selected city applies to
+all channels using weather.
+
+Each city keeps its own cached forecast. Switching shows its saved data immediately
+when available and refreshes it when stale. Deleting the selected city chooses the
+first remaining one; deleting the last city turns off weather indication.
+
+Weather uses the highest hourly precipitation probability in the next three hours
+from Open-Meteo. Successful forecasts are cached for 30 minutes; refresh timing
+also depends on your chosen interval and Android's background restrictions.
+No location permission or weather account is required.
+
+## Requirements and limitations
+
+- Android 8.0 or newer for the app and widgets; Android 14 or newer for Glyph.
+- Claude and Codex usage endpoints are unofficial and can change without notice.
+- Session expiry, network access, and service-side checks can interrupt updates.
+  Cached values remain visible with a stale-data status.
+- Glyph access depends on Nothing OS and its developer permission. The service
+  notification displays access errors.
+- Available refresh intervals are 5, 10, 15, 30, and 60 minutes. Short intervals
+  use a persistent background notification and can consume more battery.
+
+## Development
+
+Use JDK 17 and Android SDK platform 35. Configure the SDK path in `local.properties`.
+The Nothing Glyph SDK is bundled in `app/libs/glyph-matrix-sdk-2.0.aar`.
+
+```sh
+./gradlew assembleDebug
+./gradlew testDebugUnitTest lintDebug
 ```
-data/     ApiClient, модели, UsageRepository (сеть + кеш), CredentialStore, SettingsStore
-worker/   UsageRefreshWorker — периодическое и разовое обновление
-widget/   UsageWidget (Glance), UsageWidgetReceiver, RefreshWidgetAction
-glyph/    GlyphController — полоса C на Nothing Phone (2a),
-          UsageForegroundService — фоновая служба: полоса и частое обновление
-ui/       MainActivity, MainScreen, GlyphScreen, SettingsScreen, LoginActivity, форматирование
-```
 
-Слой данных не зависит от Compose/Glance и от Glyph: `UsageRepository` кормит и виджет,
-и полосу, ничего о них не зная.
+The APK is written to `app/build/outputs/apk/debug/app-debug.apk`.
 
-DI ручной — `AppGraph`, ленивый синглтон. Hilt/Retrofit намеренно не используются.
+The app uses Kotlin, Compose, Glance, WorkManager, DataStore, and Tink. `UsageRepository`
+feeds both the widgets and Glyph; `AppGraph` supplies shared dependencies. Credentials
+are encrypted with an Android Keystore-backed key.
 
-### Обновление
-
-`PeriodicWorkRequest` с уникальным именем и constraint «есть сеть»; интервал берётся
-из настроек. `updatePeriodMillis` в `appwidget-provider` равен 0 — системный таймер
-провайдера не используется.
-
-Интервалы 5 и 10 минут WorkManager не принимает: его минимум для периодической работы —
-15 минут. Это ограничение WorkManager, а не системы, поэтому короткие интервалы
-обслуживает `UsageForegroundService` — foreground service тикает сам и сохраняет доступ
-к сети даже в Doze. Платой идёт постоянное уведомление и расход батареи. WorkManager при
-этом не отключается и работает на 15 минутах как страховка на случай, если службу убьют.
-Перезагрузку периодическая работа переживает сама: WorkManager подключает свой
-`RescheduleReceiver` на `BOOT_COMPLETED` (видно в merged manifest).
-
-### Хранение сессии
-
-Cookie и User-Agent лежат в DataStore, зашифрованные AEAD-ключом (AES256-GCM) из Tink,
-мастер-ключ которого живёт в Android Keystore. `EncryptedSharedPreferences` не
-используется — он deprecated.
-
-Хранится **весь** набор cookie домена claude.ai, а не только `sessionKey`: без
-`cf_clearance` и совпадающего с WebView User-Agent Cloudflare отдаёт челлендж вместо JSON.
-
-## Известные ограничения
-
-- **API неофициальный.** `GET /api/organizations` и `GET /api/organizations/{uuid}/usage`
-  не документированы и могут измениться или исчезнуть в любой момент. Разбор ответа
-  сделан нестрого: неизвестные ключи игнорируются, окном лимита считается любой
-  вложенный объект с полем `utilization`, отсутствие `resets_at` не ошибка. Поэтому
-  новые окна (`seven_day_opus` и подобные) появятся в приложении сами — на главном
-  экране; в виджете по-прежнему только `five_hour` и `seven_day`.
-- **Cloudflare.** Запрос может вернуть HTML-страницу проверки вместо JSON. Такой ответ
-  (как и 401/403) трактуется как «нужен перелогин», а не как сетевая ошибка.
-- **Ручной ввод ключа — без `cf_clearance`.** При вставке одного `sessionKey` запросы
-  идут без cookie проверки Cloudflare и с UA системного WebView, а не того браузера,
-  где ключ получен. Обычно работает, но при челлендже Cloudflare вернёт 403.
-- **Сессия протухает.** Срок жизни cookie claude.ai не контролируется приложением;
-  рано или поздно потребуется повторный вход через WebView. Автоматического продления нет.
-- **Проценты берутся как есть.** Предполагается, что `utilization` приходит в диапазоне
-  0–100; значение только зажимается в эти границы. Если формат сменится на долю 0–1,
-  проценты станут показываться неправильно.
-- **Не проверено на устройстве.** Сборка, юнит-тесты и линт проходят; поведение WebView,
-  Cloudflare и реальные ответы API на железе не тестировались.
-- Релизная сборка идёт без R8 (`isMinifyEnabled = false`): правила для Glance,
-  WorkManager и Tink не выверялись, выпускать такой APK не стоит.
-
-
-## OpenAI / Codex (v0.8.0)
-
-На вкладке «Лимиты» можно выбрать Claude или GPT (лимиты Codex). В режиме «Лимиты»
-полоса C показывает расход этого источника. Для виджета источник выбирается отдельно на вкладке «Настройки».
-Аккаунты и кеши хранятся отдельно; существующий вход Claude сохраняется. Подпись
-источника видна и в компактном виджете.
-
-Для Codex: выбрать GPT → Подключить → импортировать `.codex/auth.json` из папки
-пользователя компьютера, где выполнен вход Codex. Файл выбирается системным
-проводником Android. Приложение проверяет вход, сохраняет только access token и
-account ID в зашифрованном хранилище Android Keystore. Refresh token не импортируется:
-обновление общей сессии телефона не должно ломать вход компьютера. После истечения
-access token нужно импортировать свежий файл. Перенесённую копию удалить после импорта;
-не публиковать её в GitHub или чатах.
-
-Лимиты приходят из неофициального `chatgpt.com/backend-api/wham/usage`:
-5-часовое и недельное окна, время сброса, дополнительные числовые окна, если сервер
-их передаёт. Формат проверен на живом аккаунте Plus. Отсутствие окна не означает 0%.
-Ошибка сервера сохраняет кеш с отметкой об устаревших данных.
-
-**Обычные переписки ChatGPT:** автоматический остаток сообщений пока не подключён.
-В приложении есть отдельный статус и ссылка на настройки Usage ChatGPT. Проценты
-Codex не выдаются за счётчик переписок. API Platform billing также не используется.
-
-Сборка и тесты проверяются на компьютере; импорт, виджет и Glyph на телефоне
-требуют проверки на устройстве.
-
-
-### Диагностика входа (v0.8.1)
-
-HTTP 403 и HTML-страница блокировки больше не считаются автоматически истёкшей
-сессией. Только HTTP 401 с обычным ответом или явный код ошибки токена требуют
-повторного импорта. Экран показывает HTTP-код и действие для сетевого отказа,
-региональной блокировки, Cloudflare или ограничения частоты запросов. Сырые ответы
-и токены в сообщения не попадают.
-
-Кнопка «Проверить доступ к OpenAI» обращается к тому же endpoint без токена.
-Обычный HTTP 401 для этой проверки означает доступный сервер, а не ошибку входа.
-Она не подтверждает действительность файла; для этого нужен импорт.
-
-Для VPN с маршрутизацией по приложениям проверьте пакет
-`space.megaworld.claudeusage` (текущее название tinyGlyph). Для диагностики можно
-временно включить туннель для всех приложений, переподключить VPN и повторить
-импорт. Успех браузера не доказывает маршрут другого приложения.
-
-
-## Интерфейс и выбор источника (v0.9.0)
-
-- Снизу три вкладки: **Лимиты**, **Glyph**, **Настройки**. Все параметры каналов A,
-  B и C перенесены в Glyph; сохранённые переключатели и время ожидания сохраняются.
-- **Настройки → ИИ в виджете**: Claude или GPT (лимиты Codex). Выбор сохраняется
-  отдельно от просмотра в приложении и применяется ко всем экземплярам виджета.
-  После обновления сохраняется прежний источник; просмотр другого аккаунта его не меняет.
-- Claude использует оранжевые акценты, GPT — белые на тёмном нейтральном фоне.
-  Жёлтый и красный по-прежнему предупреждают о высоком расходе.
-- Фоновое обновление и тап по виджету обновляют оба отображаемых источника, если
-  они различаются. Название в шапке виджета открывает соответствующий аккаунт.
-
-Чтобы включить отсчёт времени без экрана: на вкладке Glyph включить общий
-переключатель, выбрать **«Простой»** для A или B, задать порог 15/30/60/120 минут,
-затем заблокировать экран и оставить телефон экраном вниз. На пороге выбранный
-канал начинает светиться слабо и постепенно становится ярче. Включение экрана
-сбрасывает таймер; движения не отслеживаются. Если подсветки нет вообще, проверить
-уведомление службы и 48-часовое разрешение отладки Glyph (команда выше).
-
-### Исправление канала A и уведомления (v0.9.1)
-
-Таймер A больше не отменяется из-за нулевого простоя в момент SCREEN_OFF. Первый
-срок привязан к выключению экрана плюс выбранный порог; обновления лимитов его
-не отодвигают. Время считается через elapsedRealtime, включая глубокий сон.
-Будильник ELAPSED_REALTIME_WAKEUP доставляет проверку при спящем телефоне.
-После порога яркость пересчитывается не чаще раза в 15 минут; при максимальной
-яркости дополнительные будильники A прекращаются.
-
-На вкладке Glyph есть **«Проверить A · 5 секунд»**: максимальная яркость без ожидания,
-затем автоматический возврат к текущей индикации A/B/C. Проверка не требует
-включения таймера A и не меняет настройки. Короткий WakeLock с таймаутом позволяет
-завершить проверку даже после блокировки экрана. Обычный таймер не удерживает CPU.
-
-Если точные будильники не разрешены, рядом с настройкой A показана кнопка
-**«Разрешить будильники»**. Без разрешения используется допустимый неточный
-будильник; Android может задержать его доставку.
-
-Заголовок служебного уведомления — **tinyGlyph**. В развёрнутом тексте видны источник,
-последнее обновление и состояние A: выключен, экран включён, минуты отсчёта,
-достигнутый порог или пятисекундная проверка. Это подтверждает работу отсчёта,
-а не физическое свечение: его надо проверять на телефоне.
-
-
-## Выбор функций A и B (v0.10.0)
-
-На вкладке Glyph функция каждого канала выбирается отдельно: **Выкл. / Дождь /
-Простой**. Можно поменять их местами или назначить одинаковую функцию обоим.
-У каждого канала есть собственная пятисекундная проверка на полной яркости.
-Она доступна и при назначении «Выкл.» и не меняет сохранённый выбор.
-
-При обновлении включённый дождь переносится на A, включённый отсчёт простоя — на B,
-как было запрошено. Отключённые функции остаются выключенными. Сохранённые город,
-порог времени и прогноз сохраняются. Явно выбранное новое назначение имеет
-приоритет над прежними флагами и переживает перезапуск.
-
-Для одинаковых функций город и порог общие. Будильник простоя работает, пока
-«Простой» назначен хотя бы одному каналу; прогноз запрашивается, пока «Дождь»
-назначен хотя бы одному. В уведомлении tinyGlyph состояние A и B соответствует
-их текущим назначениям. C по-прежнему показывает расход лимита.
-
-
-## Осадки на полосе C (v0.11.0)
-
-**Glyph → Канал C → Осадки**: длина заполнения показывает процент вероятности
-осадков для выбранного города. Например, 70% заполняет 70% полосы. В режиме
-SDK или сегментов сохраняются выбранное направление и способ заполнения.
-C показывает и значения ниже 30%; порог коротких A/B к полосе не применяется.
-
-Доступны три режима C: **Лимиты / Осадки / Выкл.** Выбор сохраняется отдельно от
-функций A/B. При обновлении прежний режим лимитов сохраняется до явного переключения.
-Общий блок города и прогноза доступен, когда погода выбрана хотя бы для одного из
-A/B/C. Погода обновляется и при выключенных A/B, если C настроена на осадки.
-
-Используется максимальная почасовая вероятность из прогноза Open-Meteo на ближайшие
-три часа. Прогноз обновляется в фоне не чаще раза в полчаса; частота также зависит
-от выбранного интервала и ограничений Android. В приложении видны процент и время
-прогноза. Отсутствие прогноза обозначается как отсутствие данных, а не 0%.
-В уведомлении tinyGlyph режим осадков показывает город, процент C и время прогноза.
-
-
-## Несколько городов (v0.12.0)
-
-В блоке **Glyph → Города и прогноз осадков** можно добавлять несколько городов,
-переключаться нажатием на нужный и удалять города из списка. Новый город сразу
-становится выбранным. Город, сохранённый до обновления, переносится в список.
-Выбранный город общий для всех каналов, которым назначены осадки.
-
-У каждого города свой сохранённый прогноз. При переключении свежие данные видны
-сразу, устаревшие обновляются; для города без прогноза показывается отсутствие
-данных. Поиск координат при переключении не повторяется. Список, выбор и прогнозы
-сохраняются после перезапуска. При удалении выбранного города приложение выбирает
-первый оставшийся; после удаления последнего погодная индикация гаснет. Повторное
-добавление места с теми же координатами выбирает его без дубликата.
-
-Город и его прогноз читаются одним состоянием, чтобы при переключении на полосу
-и в уведомление не попадал процент от предыдущего города. Фоновое обновление
-запрашивает только выбранный город.
-
-
-## tinyGlyph (v0.13.0)
-
-Название приложения — **tinyGlyph**: на рабочем столе, в списке виджетов, в приложении
-и служебном уведомлении. Новый нейтральный значок состоит из трёх белых световых
-элементов, которые складываются в G на тёмном фоне. Адаптивный значок поддерживает
-круглую маску и тематическую монохромную отрисовку Android; значок уведомления
-использует тот же знак. Векторный логотип: `branding/tinyGlyph.svg`.
-
-Пакет `space.megaworld.claudeusage` и подпись APK сохранены: новая версия устанавливается
-поверх прежней, сохраняя аккаунты, города, виджеты и настройки Glyph. При настройке
-маршрутизации VPN приложение теперь нужно искать по названию tinyGlyph.
+The package remains `space.megaworld.claudeusage` so tinyGlyph can update previous
+versions. The vector logo is in [`branding/tinyGlyph.svg`](branding/tinyGlyph.svg).
