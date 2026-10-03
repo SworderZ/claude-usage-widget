@@ -2,6 +2,12 @@ name: Android design previews
 
 on:
   workflow_dispatch:
+    inputs:
+      scope:
+        description: Screens to capture
+        type: choice
+        options: [all, layout-fixes]
+        default: all
 
 permissions:
   contents: read
@@ -26,6 +32,7 @@ jobs:
         run: bash ./gradlew assembleDebug --console=plain
       - name: Capture real Android layouts
         env:
+          PREVIEW_SCOPE: ${{ inputs.scope }}
           ANDROID_AVD_HOME: ${{ runner.temp }}/tinyglyph-avd
         run: |
           test -e /dev/kvm

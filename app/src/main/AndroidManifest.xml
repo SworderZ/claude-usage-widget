@@ -45,6 +45,7 @@
 
         <activity
             android:name=".ui.MainActivity"
+            android:windowSoftInputMode="adjustResize"
             android:exported="true"
             android:label="@string/app_name">
             <intent-filter>
@@ -55,13 +56,16 @@
 
         <activity
             android:name=".ui.LoginActivity"
+            android:windowSoftInputMode="adjustResize"
             android:exported="false"
             android:label="@string/login_title" />
 
-        <activity android:name=".ui.OpenAiLoginActivity" android:exported="false" android:label="Подключить Codex" />
+        <activity android:name=".ui.OpenAiLoginActivity"
+            android:windowSoftInputMode="adjustResize" android:exported="false" android:label="Подключить Codex" />
 
         <activity
             android:name=".ui.ManualLoginActivity"
+            android:windowSoftInputMode="adjustResize"
             android:exported="false"
             android:label="@string/manual_login_title" />
 

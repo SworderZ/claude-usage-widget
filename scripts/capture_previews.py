@@ -50,14 +50,17 @@ def main():
         adb("shell", "wm", "size", f"{width}x{height}")
         adb("shell", "wm", "density", "480")
         adb("shell", "settings", "put", "system", "font_scale", font)
-        for screen, provider, scenario in [("MAIN", "CLAUDE", "data"), ("MAIN", "GPT", "empty"),
-                ("MAIN", "GPT", "error"), ("SETTINGS", "CLAUDE", "data"), ("GLYPH", "GPT", "data"),
-                ("LOGIN_GPT", "GPT", "data"), ("LOGIN_MANUAL", "CLAUDE", "data")]:
+        cases = [("MAIN", "CLAUDE", "data"), ("MAIN", "GPT", "empty"),
+                 ("MAIN", "GPT", "error"), ("SETTINGS", "CLAUDE", "data"), ("GLYPH", "GPT", "data"),
+                 ("LOGIN_GPT", "GPT", "data"), ("LOGIN_MANUAL", "CLAUDE", "data")]
+        if os.environ.get("PREVIEW_SCOPE") == "layout-fixes":
+            cases = [("SETTINGS", "CLAUDE", "data"), ("GLYPH", "GPT", "data"), ("LOGIN_MANUAL", "CLAUDE", "data")]
+        for screen, provider, scenario in cases:
             open_page(screen, provider, scenario)
             name = f"{prefix}-{screen.lower()}-{provider.lower()}-{scenario}"
             xml = capture(name)
             if screen in ["GLYPH", "SETTINGS", "LOGIN_MANUAL"]:
-                for index in range(1, 5 if screen == "GLYPH" else 3):
+                for index in range(1, (9 if font == "1.5" else 5) if screen == "GLYPH" else 3):
                     adb("shell", "input", "swipe", str(width // 2), str(height - 420), str(width // 2), "450", "450")
                     xml = capture(f"{name}-scroll-{index}")
             if screen == "LOGIN_MANUAL":
@@ -78,8 +81,8 @@ def main():
                 adb("shell", "input", "tap", str((x1 + x2) // 2), str((y1 + y2) // 2))
                 capture(f"{name}-keyboard")
                 adb("shell", "input", "keyevent", "4")
-        for widget_height in [60, 130, 170, 230]:
-            for provider in ["CLAUDE", "GPT"]:
+        for widget_height in [60, 130, 170, 230, 260]:
+            for provider in (["GPT"] if os.environ.get("PREVIEW_SCOPE") == "layout-fixes" else ["CLAUDE", "GPT"]):
                 open_page("WIDGET", provider, width=280, height=widget_height)
                 capture(f"{prefix}-widget-{provider.lower()}-{widget_height}")
     adb("shell", "settings", "put", "system", "font_scale", "1.0")

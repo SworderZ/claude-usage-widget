@@ -101,36 +101,43 @@ private data class Metrics(
  * иначе снизу обрезается строка сброса.
  */
 private fun metricsFor(height: Dp): Metrics = when {
-    height >= 230.dp -> Metrics(
-        cardPadding = 13.dp, tilePadding = 11.dp, tileBackground = true,
-        header = true, headerIcon = 19.dp, headerFont = 16.sp, headerGap = 4.dp,
-        tileGap = 9.dp, titleFont = 14.sp, percentFont = 17.sp,
-        barHeight = 11.dp, gapTitleBar = 7.dp, gapBarReset = 7.dp,
+    height >= 260.dp -> Metrics(
+        cardPadding = 13.dp, tilePadding = 10.dp, tileBackground = true,
+        header = true, headerIcon = 19.dp, headerFont = 16.sp, headerGap = 6.dp,
+        tileGap = 8.dp, titleFont = 14.sp, percentFont = 17.sp,
+        barHeight = 10.dp, gapTitleBar = 6.dp, gapBarReset = 5.dp,
         resetFont = 12.sp, reset = true,
     )
-    height >= 170.dp -> Metrics(
-        cardPadding = 11.dp, tilePadding = 9.dp, tileBackground = true,
-        header = true, headerIcon = 16.dp, headerFont = 14.sp, headerGap = 3.dp,
-        tileGap = 7.dp, titleFont = 13.sp, percentFont = 15.sp,
-        barHeight = 9.dp, gapTitleBar = 5.dp, gapBarReset = 5.dp,
+    height >= 210.dp -> Metrics(
+        cardPadding = 10.dp, tilePadding = 7.dp, tileBackground = true,
+        header = true, headerIcon = 16.dp, headerFont = 14.sp, headerGap = 4.dp,
+        tileGap = 6.dp, titleFont = 13.sp, percentFont = 16.sp,
+        barHeight = 8.dp, gapTitleBar = 4.dp, gapBarReset = 3.dp,
         resetFont = 11.sp, reset = true,
     )
-    height >= 130.dp -> Metrics(
-        cardPadding = 9.dp, tilePadding = 8.dp, tileBackground = true,
+    height >= 165.dp -> Metrics(
+        cardPadding = 8.dp, tilePadding = 6.dp, tileBackground = true,
         header = false, headerIcon = 0.dp, headerFont = 0.sp, headerGap = 0.dp,
-        tileGap = 6.dp, titleFont = 13.sp, percentFont = 15.sp,
-        barHeight = 9.dp, gapTitleBar = 5.dp, gapBarReset = 5.dp,
-        resetFont = 11.sp, reset = true,
+        tileGap = 6.dp, titleFont = 12.sp, percentFont = 15.sp,
+        barHeight = 7.dp, gapTitleBar = 4.dp, gapBarReset = 3.dp,
+        resetFont = 10.sp, reset = true,
     )
-    height >= 95.dp -> Metrics(
+    height >= 125.dp -> Metrics(
+        cardPadding = 8.dp, tilePadding = 5.dp, tileBackground = true,
+        header = false, headerIcon = 0.dp, headerFont = 0.sp, headerGap = 0.dp,
+        tileGap = 6.dp, titleFont = 12.sp, percentFont = 14.sp,
+        barHeight = 7.dp, gapTitleBar = 3.dp, gapBarReset = 0.dp,
+        resetFont = 0.sp, reset = false,
+    )
+    height >= 100.dp -> Metrics(
         cardPadding = 8.dp, tilePadding = 0.dp, tileBackground = false,
         header = false, headerIcon = 0.dp, headerFont = 0.sp, headerGap = 0.dp,
         tileGap = 6.dp, titleFont = 12.sp, percentFont = 14.sp,
-        barHeight = 8.dp, gapTitleBar = 4.dp, gapBarReset = 0.dp,
+        barHeight = 7.dp, gapTitleBar = 3.dp, gapBarReset = 0.dp,
         resetFont = 0.sp, reset = false,
     )
     else -> Metrics(
-        cardPadding = 8.dp, tilePadding = 0.dp, tileBackground = false,
+        cardPadding = 6.dp, tilePadding = 0.dp, tileBackground = false,
         header = false, headerIcon = 0.dp, headerFont = 0.sp, headerGap = 0.dp,
         tileGap = 4.dp, titleFont = 12.sp, percentFont = 14.sp,
         barHeight = 0.dp, gapTitleBar = 0.dp, gapBarReset = 0.dp,
@@ -255,7 +262,12 @@ private fun UsageTile(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
-                text = UsageFormat.windowTitle(window.key),
+                text = if (widgetWidth < 260.dp || androidx.glance.LocalContext.current.resources.configuration.fontScale > 1.2f)
+                    when (window.key) {
+                        UsageSnapshot.KEY_FIVE_HOUR -> "5 часов"
+                        UsageSnapshot.KEY_SEVEN_DAY -> "7 дней"
+                        else -> UsageFormat.windowTitle(window.key)
+                    } else UsageFormat.windowTitle(window.key),
                 style = TextStyle(
                     color = ColorProvider(TEXT_PRIMARY),
                     fontSize = metrics.titleFont,

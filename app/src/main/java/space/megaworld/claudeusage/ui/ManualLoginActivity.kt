@@ -140,7 +140,7 @@ internal fun ManualLoginContent(input: String, busy: Boolean, error: String?, on
                     placeholder = { Text("sk-ant-sid01-…") }, isError = error != null, enabled = !busy,
                     modifier = Modifier.fillMaxWidth(), maxLines = 5,
                     visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation(),
-                    keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(autoCorrectEnabled = false))
+                    keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(autoCorrectEnabled = false, keyboardType = androidx.compose.ui.text.input.KeyboardType.Password))
                 Button(onClick = onSave, enabled = !busy && input.isNotBlank(),
                     modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) { Text("Сохранить и проверить") }
             }

@@ -31,6 +31,8 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.res.painterResource
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
@@ -194,7 +196,8 @@ internal fun AppNavigation(selected: Screen, onSelect: (Screen) -> Unit) {
                 selected = selected == tab,
                 onClick = { onSelect(tab) },
                 icon = { Icon(painterResource(tab.icon), contentDescription = null) },
-                label = { Text(tab.label) },
+                label = { Text(tab.label, maxLines = 1, softWrap = false, overflow = TextOverflow.Ellipsis,
+                    style = MaterialTheme.typography.labelMedium.copy(fontSize = 11.sp)) },
                 colors = NavigationBarItemDefaults.colors(
                     selectedIconColor = MaterialTheme.colorScheme.primary,
                     selectedTextColor = MaterialTheme.colorScheme.primary,
