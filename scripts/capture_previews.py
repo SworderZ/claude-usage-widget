@@ -64,10 +64,16 @@ def main():
                 open_page(screen, provider, scenario)
                 time.sleep(1)
                 xml = capture(f"{name}-before-keyboard")
-                nodes = ET.fromstring(xml).iter("node")
-                target = next((n for n in nodes if n.get("class") == "android.widget.EditText"), None)
+                target = None
+                for attempt in range(4):
+                    target = next((n for n in ET.fromstring(xml).iter("node")
+                                   if n.get("class") == "android.widget.EditText"), None)
+                    if target is not None:
+                        break
+                    adb("shell", "input", "swipe", str(width // 2), str(height - 420), str(width // 2), "450", "450")
+                    xml = capture(f"{name}-find-field-{attempt}")
                 if target is None:
-                    raise RuntimeError("Session-key field is missing")
+                    raise RuntimeError("Session-key field is missing after scrolling")
                 x1, y1, x2, y2 = map(int, re.findall(r"\d+", target.attrib["bounds"]))
                 adb("shell", "input", "tap", str((x1 + x2) // 2), str((y1 + y2) // 2))
                 capture(f"{name}-keyboard")

@@ -117,7 +117,7 @@ private fun ChannelHeading(channel: String, title: String) {
 private fun ChannelCard(channel: AmbientChannel, selected: GlyphChannelMode, enabled: Boolean,
     onSelect: (GlyphChannelMode) -> Unit, onTest: () -> Unit) {
     SectionCard {
-        ChannelHeading(channel.name, "Короткий свет")
+        ChannelHeading(channel.name, "Короткий канал")
         ChoiceChips(GlyphChannelMode.entries, selected, enabled, label = { it.label }, onSelect = onSelect)
         SupportingText(when (selected) {
             GlyphChannelMode.OFF -> "Этот канал погашен."
@@ -184,7 +184,7 @@ private fun WeatherCard(settings: AmbientSettings, forecast: RainForecast?, busy
             val chosen = settings.place?.id == place.id
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Row(Modifier.weight(1f).selectable(selected = chosen, enabled = !busy, role = Role.RadioButton,
-                    onClick = { onSelectPlace(place) }).padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                    onClick = { submitted = null; onSelectPlace(place) }).padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
                     RadioButton(chosen, onClick = null, enabled = !busy)
                     Column(Modifier.weight(1f).padding(start = 10.dp)) {
                         Text(place.name, style = MaterialTheme.typography.bodyMedium)
@@ -193,12 +193,12 @@ private fun WeatherCard(settings: AmbientSettings, forecast: RainForecast?, busy
                             SupportingText("%.3f, %.3f".format(place.latitude, place.longitude))
                     }
                 }
-                IconButton(onClick = { onRemovePlace(place) }, enabled = !busy) {
+                IconButton(onClick = { submitted = null; onRemovePlace(place) }, enabled = !busy) {
                     Icon(painterResource(R.drawable.ic_close), contentDescription = "Удалить ${place.name}", modifier = Modifier.size(20.dp))
                 }
             }
         }
-        OutlinedTextField(query, onValueChange = { query = it }, label = { Text("Добавить город") },
+        OutlinedTextField(query, onValueChange = { query = it; submitted = null }, label = { Text("Добавить город") },
             singleLine = true, enabled = !busy, modifier = Modifier.fillMaxWidth(),
             keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done), keyboardActions = KeyboardActions(onDone = { add() }))
         OutlinedButton(onClick = add, enabled = !busy && query.isNotBlank(), modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {

@@ -137,7 +137,11 @@ such as `v0.14.0` builds and publishes the signed release APK automatically.
 
 For a new release, update `versionCode` and `versionName` in `app/build.gradle.kts`,
 add concise English user-facing notes in `release-notes/vVERSION.md`, and push the
-matching tag. Only the APK is attached to the release. The publishing workflow can
+matching tag. Use the manual **Android design previews** workflow to capture actual
+Compose screens and Glance widgets on Android 15 with regular and larger text.
+Its fixtures are debug-only and never included in the release APK.
+
+Only the APK is attached to the release. The publishing workflow can
 also be run manually for an existing tag.
 
 Release signing uses these repository Actions secrets: `ANDROID_KEYSTORE_BASE64`,
