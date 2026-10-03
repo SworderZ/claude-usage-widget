@@ -16,12 +16,15 @@ import androidx.glance.appwidget.updateAll
 import kotlinx.coroutines.*
 import space.megaworld.claudeusage.AppGraph
 import space.megaworld.claudeusage.data.RefreshResult
+import space.megaworld.claudeusage.data.OpenAiImportException
+import space.megaworld.claudeusage.data.OpenAiUsageClient
 import space.megaworld.claudeusage.widget.UsageWidget
 import space.megaworld.claudeusage.worker.UsageRefreshWorker
 
 class OpenAiLoginActivity : ComponentActivity() {
     private var busy by mutableStateOf(false)
     private var error by mutableStateOf<String?>(null)
+    private var networkStatus by mutableStateOf<String?>(null)
     private val pickFile = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri == null) return@registerForActivityResult
         busy = true
@@ -41,10 +44,11 @@ class OpenAiLoginActivity : ComponentActivity() {
                         UsageWidget().updateAll(this@OpenAiLoginActivity)
                         finish()
                     }
-                    RefreshResult.NotAuthorized, RefreshResult.SessionExpired -> error = "Сессия не принята. Обновите вход Codex и импортируйте файл заново."
+                    RefreshResult.NotAuthorized, RefreshResult.SessionExpired -> error = "OpenAI отклонил токен (401 или явная ошибка токена). Импортируйте свежий auth.json после входа Codex."
                     is RefreshResult.Failure -> error = result.message
                 }
             } catch (e: CancellationException) { throw e
+            } catch (e: OpenAiImportException) { error = e.message
             } catch (e: Exception) { error = "Не удалось подключить аккаунт. Нужен JSON-файл с access_token из Codex."
             } finally { busy = false }
         }
@@ -59,8 +63,17 @@ class OpenAiLoginActivity : ComponentActivity() {
                         Text("Подключить Codex", style = MaterialTheme.typography.headlineSmall)
                         Text("На компьютере с выполненным входом Codex найдите файл .codex/auth.json в папке пользователя. Перенесите его на телефон и выберите ниже.")
                         Text("Файл содержит секреты аккаунта. Не отправляйте его в чаты. После импорта удалите перенесённую копию. Приложение хранит access token зашифрованным и не использует refresh token компьютера.", style = MaterialTheme.typography.bodySmall)
+                        Text("Если VPN работает по списку приложений, включите в маршрут AI Usage (space.megaworld.claudeusage). Открывающийся браузер не подтверждает, что это приложение идёт тем же маршрутом.", style = MaterialTheme.typography.bodySmall)
                         Text("Когда access token истечёт, потребуется импорт свежего файла. Это подключение показывает лимиты Codex, а не количество оставшихся сообщений ChatGPT.")
                         Button(onClick = { pickFile.launch(arrayOf("application/json", "text/plain", "application/octet-stream")) }, enabled = !busy) { Text("Выбрать файл входа") }
+                        OutlinedButton(onClick = {
+                            busy = true
+                            lifecycleScope.launch {
+                                try { networkStatus = OpenAiUsageClient().checkConnectivity() }
+                                finally { busy = false }
+                            }
+                        }, enabled = !busy) { Text("Проверить доступ к OpenAI") }
+                        networkStatus?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
                         error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
                         if (busy) CircularProgressIndicator()
                         OutlinedButton(onClick = { finish() }, enabled = !busy) { Text("Назад") }
