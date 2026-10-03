@@ -24,16 +24,14 @@ class UsageRefreshWorker(
 
     override suspend fun doWork(): Result {
         val repository = AppGraph.get(applicationContext).usageRepository
-        val result = repository.refresh()
+        val results = repository.refreshDisplayedSources()
         // Виджет перерисовываем в любом случае: ошибка тоже меняет его вид.
         UsageWidget().updateAll(applicationContext)
 
-        return when (result) {
-            is RefreshResult.Success -> Result.success()
-            // Повтор не поможет: нужен перелогин пользователя.
-            RefreshResult.NotAuthorized, RefreshResult.SessionExpired -> Result.success()
-            is RefreshResult.Failure ->
-                if (runAttemptCount < MAX_ATTEMPTS) Result.retry() else Result.success()
+        return if (results.any { it is RefreshResult.Failure } && runAttemptCount < MAX_ATTEMPTS) {
+            Result.retry()
+        } else {
+            Result.success()
         }
     }
 

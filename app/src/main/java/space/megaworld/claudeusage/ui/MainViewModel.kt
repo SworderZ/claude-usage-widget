@@ -15,6 +15,7 @@ import space.megaworld.claudeusage.AppGraph
 import space.megaworld.claudeusage.data.ApiResult
 import space.megaworld.claudeusage.data.GlyphRenderMode
 import space.megaworld.claudeusage.data.RefreshResult
+import space.megaworld.claudeusage.data.UsageProvider
 import space.megaworld.claudeusage.data.UsageState
 import space.megaworld.claudeusage.widget.UsageWidget
 import space.megaworld.claudeusage.worker.UsageRefreshWorker
@@ -60,11 +61,18 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         UsageWidget().updateAll(getApplication())
     }
 
-    fun selectProvider(provider: space.megaworld.claudeusage.data.UsageProvider) = runBusy {
+    fun selectProvider(provider: UsageProvider) = runBusy {
         graph.usageRepository.selectProvider(provider)
         UsageRefreshWorker.ensureScheduled(getApplication(), graph.settingsStore.currentIntervalMinutes())
         UsageWidget().updateAll(getApplication())
         _message.value = null
+    }
+
+    fun setWidgetProvider(provider: UsageProvider) = runBusy {
+        graph.usageRepository.setWidgetProvider(provider)
+        UsageWidget().updateAll(getApplication())
+        UsageRefreshWorker.ensureScheduled(getApplication(), graph.settingsStore.currentIntervalMinutes())
+        UsageRefreshWorker.refreshNow(getApplication())
     }
 
     fun setGlyphEnabled(enabled: Boolean) = runBusy {
@@ -105,10 +113,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         UsageRefreshWorker.reschedule(getApplication(), minutes)
     }
 
-    /** Выход: токены, кеш, настройки, cookies WebView и периодическая работа. */
+    /** Выход только из просматриваемого аккаунта; другой источник виджета продолжает обновляться. */
     fun logout() = runBusy {
         graph.usageRepository.logout()
-        UsageRefreshWorker.cancel(getApplication())
+        UsageRefreshWorker.ensureScheduled(getApplication(), graph.settingsStore.currentIntervalMinutes())
         clearWebViewCookies()
         UsageWidget().updateAll(getApplication())
         _message.value = null

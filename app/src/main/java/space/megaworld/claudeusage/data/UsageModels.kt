@@ -86,6 +86,7 @@ data class UsageState(
     val organizationUuid: String? = null,
     val refreshIntervalMinutes: Int = SettingsStore.DEFAULT_INTERVAL_MINUTES,
     val provider: UsageProvider = UsageProvider.CLAUDE,
+    val widgetProvider: UsageProvider = UsageProvider.CLAUDE,
     val glyphEnabled: Boolean = false,
     val glyphRenderMode: GlyphRenderMode = GlyphRenderMode.PROGRESS,
     val ambient: AmbientSettings = AmbientSettings(),

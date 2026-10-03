@@ -57,7 +57,7 @@ class OpenAiLoginActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContent {
-            ClaudeUsageTheme {
+            ClaudeUsageTheme(provider = space.megaworld.claudeusage.data.UsageProvider.CODEX) {
                 Surface(modifier = Modifier.fillMaxSize()) {
                     Column(modifier = Modifier.padding(20.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(16.dp)) {
                         Text("Подключить Codex", style = MaterialTheme.typography.headlineSmall)

@@ -1,6 +1,8 @@
 package space.megaworld.claudeusage.data
 
 import android.content.Context
+import androidx.datastore.core.DataStore
+import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.intPreferencesKey
@@ -12,52 +14,67 @@ import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.json.Json
 
 /** Несекретные настройки: выбранная организация и интервал обновления. */
-class SettingsStore(private val context: Context) {
+class SettingsStore internal constructor(private val dataStore: DataStore<Preferences>) {
 
-    val provider: Flow<UsageProvider> = context.appDataStore.data.map {
+    constructor(context: Context) : this(context.appDataStore)
+
+    val provider: Flow<UsageProvider> = dataStore.data.map {
         runCatching { UsageProvider.valueOf(it[KEY_PROVIDER] ?: "CLAUDE") }.getOrDefault(UsageProvider.CLAUDE)
     }
 
     suspend fun setProvider(provider: UsageProvider) {
-        context.appDataStore.edit { it[KEY_PROVIDER] = provider.name }
+        dataStore.edit {
+            // При первом переключении сохраняем прежний источник виджета.
+            if (it[KEY_WIDGET_PROVIDER] == null) it[KEY_WIDGET_PROVIDER] = it[KEY_PROVIDER] ?: UsageProvider.CLAUDE.name
+            it[KEY_PROVIDER] = provider.name
+        }
+    }
+
+    val widgetProvider: Flow<UsageProvider> = dataStore.data.map {
+        runCatching { UsageProvider.valueOf(it[KEY_WIDGET_PROVIDER] ?: it[KEY_PROVIDER] ?: "CLAUDE") }
+            .getOrDefault(UsageProvider.CLAUDE)
+    }
+
+    suspend fun setWidgetProvider(provider: UsageProvider) {
+        dataStore.edit { it[KEY_WIDGET_PROVIDER] = provider.name }
     }
 
     val organizationUuid: Flow<String?> =
-        context.appDataStore.data.map { it[KEY_ORG_UUID] }
+        dataStore.data.map { it[KEY_ORG_UUID] }
 
-    val organizations: Flow<List<Organization>> = context.appDataStore.data.map { prefs ->
+    val organizations: Flow<List<Organization>> = dataStore.data.map { prefs ->
         prefs[KEY_ORGS]?.let { raw ->
             runCatching { json.decodeFromString<List<Organization>>(raw) }.getOrDefault(emptyList())
         }.orEmpty()
     }
 
-    val refreshIntervalMinutes: Flow<Int> = context.appDataStore.data.map { prefs ->
+    val refreshIntervalMinutes: Flow<Int> = dataStore.data.map { prefs ->
         prefs[KEY_INTERVAL]?.takeIf { it in ALLOWED_INTERVALS } ?: DEFAULT_INTERVAL_MINUTES
     }
 
     /** Индикация на полосе C Glyph. По умолчанию выключена: нужна и модель, и включённая отладка SDK. */
     val glyphEnabled: Flow<Boolean> =
-        context.appDataStore.data.map { it[KEY_GLYPH_ENABLED] ?: false }
+        dataStore.data.map { it[KEY_GLYPH_ENABLED] ?: false }
 
     suspend fun setGlyphEnabled(enabled: Boolean) {
-        context.appDataStore.edit { it[KEY_GLYPH_ENABLED] = enabled }
+        dataStore.edit { it[KEY_GLYPH_ENABLED] = enabled }
     }
 
-    val glyphRenderMode: Flow<GlyphRenderMode> = context.appDataStore.data.map { prefs ->
+    val glyphRenderMode: Flow<GlyphRenderMode> = dataStore.data.map { prefs ->
         prefs[KEY_GLYPH_MODE]
             ?.let { raw -> runCatching { GlyphRenderMode.valueOf(raw) }.getOrNull() }
             ?: GlyphRenderMode.PROGRESS
     }
 
     suspend fun setGlyphRenderMode(mode: GlyphRenderMode) {
-        context.appDataStore.edit { it[KEY_GLYPH_MODE] = mode.name }
+        dataStore.edit { it[KEY_GLYPH_MODE] = mode.name }
     }
 
     /**
      * Короткие каналы A и B. Сложены в один поток, а не разложены по четыре:
      * combine в [UsageRepository] уже упёрся в предел по числу источников.
      */
-    val ambient: Flow<AmbientSettings> = context.appDataStore.data.map { prefs ->
+    val ambient: Flow<AmbientSettings> = dataStore.data.map { prefs ->
         AmbientSettings(
             idleEnabled = prefs[KEY_IDLE_ENABLED] ?: false,
             idleThresholdMinutes = prefs[KEY_IDLE_MINUTES]
@@ -71,7 +88,7 @@ class SettingsStore(private val context: Context) {
     }
 
     /** Последний прогноз. Кеш нужен, чтобы канал B не гас из-за одного неудачного запроса. */
-    val rainForecast: Flow<RainForecast?> = context.appDataStore.data.map { prefs ->
+    val rainForecast: Flow<RainForecast?> = dataStore.data.map { prefs ->
         prefs[KEY_RAIN_FORECAST]?.let { raw ->
             runCatching { json.decodeFromString<RainForecast>(raw) }.getOrNull()
         }
@@ -82,7 +99,7 @@ class SettingsStore(private val context: Context) {
     suspend fun currentRainForecast(): RainForecast? = rainForecast.first()
 
     suspend fun setIdleEnabled(enabled: Boolean) {
-        context.appDataStore.edit { it[KEY_IDLE_ENABLED] = enabled }
+        dataStore.edit { it[KEY_IDLE_ENABLED] = enabled }
     }
 
     suspend fun setIdleThresholdMinutes(minutes: Int) {
@@ -91,16 +108,16 @@ class SettingsStore(private val context: Context) {
         } else {
             AmbientSettings.DEFAULT_IDLE_MINUTES
         }
-        context.appDataStore.edit { it[KEY_IDLE_MINUTES] = safe }
+        dataStore.edit { it[KEY_IDLE_MINUTES] = safe }
     }
 
     suspend fun setRainEnabled(enabled: Boolean) {
-        context.appDataStore.edit { it[KEY_RAIN_ENABLED] = enabled }
+        dataStore.edit { it[KEY_RAIN_ENABLED] = enabled }
     }
 
     /** Смена места обнуляет прогноз: к новым координатам прежний не относится. */
     suspend fun setWeatherPlace(place: WeatherPlace?) {
-        context.appDataStore.edit { prefs ->
+        dataStore.edit { prefs ->
             if (place == null) {
                 prefs.remove(KEY_WEATHER_PLACE)
             } else {
@@ -111,7 +128,7 @@ class SettingsStore(private val context: Context) {
     }
 
     suspend fun setRainForecast(forecast: RainForecast) {
-        context.appDataStore.edit {
+        dataStore.edit {
             it[KEY_RAIN_FORECAST] = json.encodeToString(RainForecast.serializer(), forecast)
         }
     }
@@ -119,24 +136,24 @@ class SettingsStore(private val context: Context) {
     suspend fun currentIntervalMinutes(): Int = refreshIntervalMinutes.first()
 
     suspend fun setOrganizationUuid(uuid: String?) {
-        context.appDataStore.edit { prefs ->
+        dataStore.edit { prefs ->
             if (uuid == null) prefs.remove(KEY_ORG_UUID) else prefs[KEY_ORG_UUID] = uuid
         }
     }
 
     suspend fun setOrganizations(list: List<Organization>) {
-        context.appDataStore.edit { prefs ->
+        dataStore.edit { prefs ->
             prefs[KEY_ORGS] = json.encodeToString(ListSerializer(Organization.serializer()), list)
         }
     }
 
     suspend fun setRefreshIntervalMinutes(minutes: Int) {
         val safe = if (minutes in ALLOWED_INTERVALS) minutes else DEFAULT_INTERVAL_MINUTES
-        context.appDataStore.edit { it[KEY_INTERVAL] = safe }
+        dataStore.edit { it[KEY_INTERVAL] = safe }
     }
 
     suspend fun clear() {
-        context.appDataStore.edit { prefs ->
+        dataStore.edit { prefs ->
             prefs.remove(KEY_ORG_UUID)
             prefs.remove(KEY_ORGS)
         }
@@ -150,6 +167,7 @@ class SettingsStore(private val context: Context) {
         val ALLOWED_INTERVALS = listOf(5, 10, 15, 30, 60)
         const val DEFAULT_INTERVAL_MINUTES = 30
 
+        private val KEY_WIDGET_PROVIDER = stringPreferencesKey("widget_provider")
         private val KEY_PROVIDER = stringPreferencesKey("usage_provider")
         private val KEY_ORG_UUID = stringPreferencesKey("organization_uuid")
         private val KEY_ORGS = stringPreferencesKey("organizations")

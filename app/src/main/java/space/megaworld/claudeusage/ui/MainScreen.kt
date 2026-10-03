@@ -15,8 +15,6 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -27,10 +25,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import space.megaworld.claudeusage.R
+import space.megaworld.claudeusage.data.UsageProvider
 import space.megaworld.claudeusage.data.UsageState
 import space.megaworld.claudeusage.data.UsageStatus
 import space.megaworld.claudeusage.data.UsageWindow
@@ -45,25 +42,12 @@ fun MainScreen(
     onLogin: () -> Unit,
     onManualLogin: () -> Unit,
     onLogout: () -> Unit,
-    onOpenSettings: () -> Unit,
     onDismissMessage: () -> Unit,
-    onSelectProvider: (space.megaworld.claudeusage.data.UsageProvider) -> Unit,
+    onSelectProvider: (UsageProvider) -> Unit,
     onOpenAiLogin: () -> Unit,
 ) {
     Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text(text = "AI Usage") },
-                actions = {
-                    IconButton(onClick = onOpenSettings) {
-                        Icon(
-                            painter = painterResource(R.drawable.ic_settings),
-                            contentDescription = "Настройки",
-                        )
-                    }
-                },
-            )
-        },
+        topBar = { TopAppBar(title = { Text("AI Usage") }) },
     ) { innerPadding ->
         Column(
             modifier = Modifier
@@ -72,21 +56,15 @@ fun MainScreen(
                 .verticalScroll(rememberScrollState())
                 .padding(horizontal = 16.dp, vertical = 8.dp),
         ) {
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                space.megaworld.claudeusage.data.UsageProvider.entries.forEach { provider ->
-                    OutlinedButton(onClick = { onSelectProvider(provider) }, enabled = !busy && state.provider != provider) {
-                        Text(provider.label)
-                    }
-                }
-            }
-            Text("Показан расход ${state.provider.label}", style = MaterialTheme.typography.titleMedium)
+            ProviderPicker(selected = state.provider, enabled = !busy, onSelect = onSelectProvider)
+            Spacer(modifier = Modifier.height(16.dp))
+            Text("Расход " + state.provider.displayLabel(), style = MaterialTheme.typography.titleMedium)
             Spacer(modifier = Modifier.height(12.dp))
-            ChatGptAvailability()
             StatusBanner(state = state, message = message, onDismissMessage = onDismissMessage)
 
             if (state.hasData) {
                 state.snapshot?.windows?.forEach { window ->
-                    UsageRow(window = window, stale = state.isStale)
+                    UsageRow(window = window, stale = state.isStale, provider = state.provider)
                     Spacer(modifier = Modifier.height(16.dp))
                 }
                 HorizontalDivider()
@@ -103,6 +81,10 @@ fun MainScreen(
                 )
             }
 
+            if (state.provider == UsageProvider.CODEX) {
+                Spacer(modifier = Modifier.height(16.dp))
+                ChatGptAvailability()
+            }
             Spacer(modifier = Modifier.height(24.dp))
 
             if (busy) {
@@ -115,23 +97,22 @@ fun MainScreen(
                 Spacer(modifier = Modifier.height(16.dp))
             }
 
-            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                if (state.status == UsageStatus.NOT_AUTHORIZED ||
-                    state.status == UsageStatus.SESSION_EXPIRED
-                ) {
-                    Button(onClick = if (state.provider == space.megaworld.claudeusage.data.UsageProvider.CODEX) onOpenAiLogin else onLogin, enabled = !busy) { Text(text = "Подключить") }
-                    if (state.provider == space.megaworld.claudeusage.data.UsageProvider.CLAUDE) OutlinedButton(onClick = onManualLogin, enabled = !busy) {
-                        Text(text = "Ключ вручную")
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                if (state.status == UsageStatus.NOT_AUTHORIZED || state.status == UsageStatus.SESSION_EXPIRED) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Button(onClick = if (state.provider == UsageProvider.CODEX) onOpenAiLogin else onLogin, enabled = !busy) {
+                            Text(text = "Подключить")
+                        }
+                        if (state.provider == UsageProvider.CLAUDE) {
+                            OutlinedButton(onClick = onManualLogin, enabled = !busy) { Text(text = "Ключ вручную") }
+                        }
                     }
                 }
-                Button(
-                    onClick = onRefresh,
-                    enabled = !busy && state.status != UsageStatus.NOT_AUTHORIZED,
-                ) {
-                    Text(text = "Обновить")
-                }
                 if (state.status != UsageStatus.NOT_AUTHORIZED) {
-                    OutlinedButton(onClick = onLogout, enabled = !busy) { Text(text = "Выйти") }
+                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Button(onClick = onRefresh, enabled = !busy) { Text(text = "Обновить") }
+                        OutlinedButton(onClick = onLogout, enabled = !busy) { Text(text = "Выйти") }
+                    }
                 }
             }
         }
@@ -162,9 +143,9 @@ private fun StatusBanner(state: UsageState, message: String?, onDismissMessage: 
 }
 
 @Composable
-private fun UsageRow(window: UsageWindow, stale: Boolean) {
+private fun UsageRow(window: UsageWindow, stale: Boolean, provider: UsageProvider) {
     val level = UsageFormat.level(window.utilization)
-    val color = UsageColors.forLevel(level).let { if (stale) it.copy(alpha = 0.45f) else it }
+    val color = UsageColors.forLevel(level, provider).let { if (stale) it.copy(alpha = 0.45f) else it }
     Column(modifier = Modifier.fillMaxWidth()) {
         Row(
             modifier = Modifier.fillMaxWidth(),

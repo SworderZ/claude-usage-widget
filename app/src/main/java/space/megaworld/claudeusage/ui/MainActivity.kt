@@ -5,20 +5,31 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
+import androidx.activity.compose.BackHandler
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.consumeWindowInsets
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.Surface
+import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.NavigationBar
+import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.NavigationBarItemDefaults
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.painterResource
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -29,6 +40,8 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import space.megaworld.claudeusage.AppGraph
+import space.megaworld.claudeusage.R
+import space.megaworld.claudeusage.data.UsageProvider
 import space.megaworld.claudeusage.glyph.UsageForegroundService
 
 class MainActivity : ComponentActivity() {
@@ -38,21 +51,31 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        if (savedInstanceState == null) selectRequestedProvider(intent)
         followGlyphSetting()
         setContent {
-            ClaudeUsageTheme {
-                Surface(modifier = Modifier.fillMaxSize()) {
-                    AppRoot(
-                        onOpenLogin = {
-                            startActivity(Intent(this, LoginActivity::class.java))
-                        },
-                        onOpenManualLogin = {
-                            startActivity(Intent(this, ManualLoginActivity::class.java))
-                        },
-                    )
-                }
-            }
+            AppRoot(
+                onOpenLogin = { startActivity(Intent(this, LoginActivity::class.java)) },
+                onOpenManualLogin = { startActivity(Intent(this, ManualLoginActivity::class.java)) },
+            )
         }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        selectRequestedProvider(intent)
+    }
+
+    private fun selectRequestedProvider(intent: Intent?) {
+        val provider = intent?.getStringExtra(EXTRA_PROVIDER)?.let {
+            runCatching { UsageProvider.valueOf(it) }.getOrNull()
+        } ?: return
+        lifecycleScope.launch { AppGraph.get(this@MainActivity).usageRepository.selectProvider(provider) }
+    }
+
+    companion object {
+        const val EXTRA_PROVIDER = "usage_provider"
     }
 
     /**
@@ -91,53 +114,80 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-private enum class Screen { MAIN, SETTINGS }
+private enum class Screen(val label: String, val icon: Int) {
+    MAIN("Лимиты", R.drawable.ic_limits),
+    GLYPH("Glyph", R.drawable.ic_glyph),
+    SETTINGS("Настройки", R.drawable.ic_settings),
+}
 
 @Composable
 private fun AppRoot(onOpenLogin: () -> Unit, onOpenManualLogin: () -> Unit) {
     val context = androidx.compose.ui.platform.LocalContext.current
-    // Экранов два, NavHost ради них тянуть не стоит.
-    var screen by remember { mutableStateOf(Screen.MAIN) }
+    var screen by rememberSaveable { mutableStateOf(Screen.MAIN) }
     val viewModel: MainViewModel = viewModel()
     val state by viewModel.state.collectAsStateWithLifecycle()
     val busy by viewModel.busy.collectAsStateWithLifecycle()
     val message by viewModel.message.collectAsStateWithLifecycle()
 
-    val loaded = state ?: run {
-        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-            CircularProgressIndicator()
+    val loaded = state
+    ClaudeUsageTheme(provider = loaded?.provider ?: UsageProvider.CLAUDE) {
+        if (loaded == null) {
+            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                CircularProgressIndicator()
+            }
+        } else {
+            BackHandler(enabled = screen != Screen.MAIN) { screen = Screen.MAIN }
+            Scaffold(
+                contentWindowInsets = WindowInsets(0, 0, 0, 0),
+                bottomBar = {
+                    NavigationBar(containerColor = MaterialTheme.colorScheme.surface) {
+                        Screen.entries.forEach { tab ->
+                            NavigationBarItem(
+                                selected = screen == tab,
+                                onClick = { screen = tab },
+                                icon = { Icon(painterResource(tab.icon), contentDescription = null) },
+                                label = { Text(tab.label) },
+                                colors = NavigationBarItemDefaults.colors(
+                                    selectedIconColor = MaterialTheme.colorScheme.primary,
+                                    selectedTextColor = MaterialTheme.colorScheme.primary,
+                                    indicatorColor = MaterialTheme.colorScheme.primaryContainer,
+                                ),
+                            )
+                        }
+                    }
+                },
+            ) { innerPadding ->
+                Box(modifier = Modifier.fillMaxSize().padding(innerPadding).consumeWindowInsets(innerPadding)) {
+                    when (screen) {
+                        Screen.MAIN -> MainScreen(
+                            state = loaded, busy = busy, message = message,
+                            onRefresh = viewModel::refresh, onLogin = onOpenLogin,
+                            onManualLogin = onOpenManualLogin, onLogout = viewModel::logout,
+                            onDismissMessage = viewModel::dismissMessage,
+                            onSelectProvider = viewModel::selectProvider,
+                            onOpenAiLogin = { context.startActivity(Intent(context, OpenAiLoginActivity::class.java)) },
+                        )
+                        Screen.GLYPH -> GlyphScreen(
+                            state = loaded, busy = busy, message = message,
+                            onDismissMessage = viewModel::dismissMessage,
+                            onToggleGlyph = viewModel::setGlyphEnabled,
+                            onSelectGlyphMode = viewModel::setGlyphRenderMode,
+                            onToggleIdle = viewModel::setIdleEnabled,
+                            onSelectIdleMinutes = viewModel::setIdleThresholdMinutes,
+                            onToggleRain = viewModel::setRainEnabled,
+                            onSelectPlace = viewModel::selectWeatherPlace,
+                            onClearPlace = viewModel::clearWeatherPlace,
+                        )
+                        Screen.SETTINGS -> SettingsScreen(
+                            state = loaded, busy = busy,
+                            onSelectWidgetProvider = viewModel::setWidgetProvider,
+                            onSelectOrganization = viewModel::selectOrganization,
+                            onSelectInterval = viewModel::setRefreshInterval,
+                            onReloadOrganizations = viewModel::reloadOrganizations,
+                        )
+                    }
+                }
+            }
         }
-        return
-    }
-
-    when (screen) {
-        Screen.MAIN -> MainScreen(
-            state = loaded,
-            busy = busy,
-            message = message,
-            onRefresh = viewModel::refresh,
-            onLogin = onOpenLogin,
-            onManualLogin = onOpenManualLogin,
-            onLogout = viewModel::logout,
-            onOpenSettings = { screen = Screen.SETTINGS },
-            onDismissMessage = viewModel::dismissMessage,
-            onSelectProvider = viewModel::selectProvider,
-            onOpenAiLogin = { context.startActivity(Intent(context, OpenAiLoginActivity::class.java)) },
-        )
-        Screen.SETTINGS -> SettingsScreen(
-            state = loaded,
-            busy = busy,
-            onBack = { screen = Screen.MAIN },
-            onSelectOrganization = viewModel::selectOrganization,
-            onSelectInterval = viewModel::setRefreshInterval,
-            onReloadOrganizations = viewModel::reloadOrganizations,
-            onToggleGlyph = viewModel::setGlyphEnabled,
-            onSelectGlyphMode = viewModel::setGlyphRenderMode,
-            onToggleIdle = viewModel::setIdleEnabled,
-            onSelectIdleMinutes = viewModel::setIdleThresholdMinutes,
-            onToggleRain = viewModel::setRainEnabled,
-            onSelectPlace = viewModel::selectWeatherPlace,
-            onClearPlace = viewModel::clearWeatherPlace,
-        )
     }
 }

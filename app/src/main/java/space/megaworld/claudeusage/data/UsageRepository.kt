@@ -41,38 +41,46 @@ class UsageRepository(
         CachedUsage(snapshot, status, prefs[errorKey(provider)])
     }
 
-    val state: Flow<UsageState> = settingsStore.provider.flatMapLatest { provider -> combine(
-        credentialsFor(provider).hasCredentials,
-        settingsStore.organizations,
-        settingsStore.organizationUuid,
-        settingsStore.refreshIntervalMinutes,
-        cache(provider),
-    ) { hasCredentials, organizations, organizationUuid, interval, cached ->
-        val status = when {
-            !hasCredentials -> UsageStatus.NOT_AUTHORIZED
-            cached.status == null -> UsageStatus.NEVER_LOADED
-            cached.status == UsageStatus.NOT_AUTHORIZED -> UsageStatus.NEVER_LOADED
-            else -> cached.status
+    val state: Flow<UsageState> = observeState(settingsStore.provider)
+    val widgetState: Flow<UsageState> = observeState(settingsStore.widgetProvider)
+
+    private fun observeState(source: Flow<UsageProvider>): Flow<UsageState> =
+        source.flatMapLatest { provider ->
+            combine(
+                credentialsFor(provider).hasCredentials,
+                settingsStore.organizations,
+                settingsStore.organizationUuid,
+                settingsStore.refreshIntervalMinutes,
+                cache(provider),
+            ) { hasCredentials, organizations, organizationUuid, interval, cached ->
+                val status = when {
+                    !hasCredentials -> UsageStatus.NOT_AUTHORIZED
+                    cached.status == null -> UsageStatus.NEVER_LOADED
+                    cached.status == UsageStatus.NOT_AUTHORIZED -> UsageStatus.NEVER_LOADED
+                    else -> cached.status
+                }
+                UsageState(
+                    provider = provider,
+                    status = status,
+                    snapshot = if (hasCredentials) cached.snapshot else null,
+                    errorMessage = cached.error,
+                    organizations = organizations,
+                    organizationUuid = organizationUuid,
+                    refreshIntervalMinutes = interval,
+                )
+                // Остальные настройки подмешиваем после основных пяти потоков.
+            }.combine(settingsStore.glyphEnabled) { state, glyphEnabled ->
+                state.copy(glyphEnabled = glyphEnabled)
+            }.combine(settingsStore.glyphRenderMode) { state, mode ->
+                state.copy(glyphRenderMode = mode)
+            }.combine(settingsStore.ambient) { state, ambient ->
+                state.copy(ambient = ambient)
+            }.combine(settingsStore.rainForecast) { state, forecast ->
+                state.copy(rainForecast = forecast)
+            }.combine(settingsStore.widgetProvider) { state, widgetProvider ->
+                state.copy(widgetProvider = widgetProvider)
+            }
         }
-        UsageState(
-            provider = provider,
-            status = status,
-            snapshot = if (hasCredentials) cached.snapshot else null,
-            errorMessage = cached.error,
-            organizations = organizations,
-            organizationUuid = organizationUuid,
-            refreshIntervalMinutes = interval,
-        )
-    // combine с типами ограничен пятью потоками, шестой подмешиваем отдельно.
-    }.combine(settingsStore.glyphEnabled) { state, glyphEnabled ->
-        state.copy(glyphEnabled = glyphEnabled)
-    }.combine(settingsStore.glyphRenderMode) { state, mode ->
-        state.copy(glyphRenderMode = mode)
-    }.combine(settingsStore.ambient) { state, ambient ->
-        state.copy(ambient = ambient)
-    }.combine(settingsStore.rainForecast) { state, forecast ->
-        state.copy(rainForecast = forecast)
-    } }
 
     suspend fun currentState(): UsageState = state.first()
 
@@ -118,8 +126,14 @@ class UsageRepository(
     }
 
     /** Один цикл обновления. Вызывается воркером, кнопкой «Обновить» и тапом по виджету. */
-    suspend fun refresh(): RefreshResult = refreshMutex.withLock {
-        val provider = settingsStore.provider.first()
+    suspend fun refresh(): RefreshResult = refresh(settingsStore.provider.first())
+
+    suspend fun refreshDisplayedSources(): List<RefreshResult> {
+        val targets = listOf(settingsStore.provider.first(), settingsStore.widgetProvider.first()).distinct()
+        return targets.map { refresh(it) }
+    }
+
+    suspend fun refresh(provider: UsageProvider): RefreshResult = refreshMutex.withLock {
         if (provider == UsageProvider.CODEX) {
             val credentials = openAiCredentialStore.load() ?: run {
                 writeStatus(UsageStatus.NOT_AUTHORIZED, null, provider)
@@ -276,6 +290,10 @@ class UsageRepository(
     private suspend fun refreshWeather(place: WeatherPlace) {
         val result = weatherClient.fetchRain(place)
         if (result is ApiResult.Success) settingsStore.setRainForecast(result.value)
+    }
+
+    suspend fun setWidgetProvider(provider: UsageProvider) {
+        settingsStore.setWidgetProvider(provider)
     }
 
     suspend fun selectProvider(provider: UsageProvider) = refreshMutex.withLock {

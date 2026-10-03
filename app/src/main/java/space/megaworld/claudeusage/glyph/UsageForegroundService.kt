@@ -208,7 +208,7 @@ class UsageForegroundService : Service() {
     private fun runTick() {
         jobs += scope.launch {
             val graph = AppGraph.get(applicationContext)
-            runCatching { graph.usageRepository.refresh() }
+            runCatching { graph.usageRepository.refreshDisplayedSources() }
             // Прогноз едет на том же тике, но со своим сроком годности — внутрь
             // сети он сходит далеко не каждый раз.
             runCatching { graph.usageRepository.refreshWeatherIfStale() }

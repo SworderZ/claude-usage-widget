@@ -1,6 +1,10 @@
 package space.megaworld.claudeusage.widget
 
 import android.content.Context
+import android.content.Intent
+import kotlinx.coroutines.flow.first
+import space.megaworld.claudeusage.data.UsageProvider
+import space.megaworld.claudeusage.ui.ProviderColors
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -14,7 +18,7 @@ import androidx.glance.GlanceModifier
 import androidx.glance.Image
 import androidx.glance.ImageProvider
 import androidx.glance.LocalSize
-import androidx.glance.action.actionStartActivity
+import androidx.glance.appwidget.action.actionStartActivity
 import androidx.glance.action.clickable
 import androidx.glance.appwidget.GlanceAppWidget
 import androidx.glance.appwidget.SizeMode
@@ -61,9 +65,9 @@ class UsageWidget : GlanceAppWidget() {
         val repository = AppGraph.get(context).usageRepository
         // Начальное значение читаем до provideContent, иначе виджет моргнёт
         // состоянием «не авторизован» на первом кадре.
-        val initial = repository.currentState()
+        val initial = repository.widgetState.first()
         provideContent {
-            val state by repository.state.collectAsState(initial = initial)
+            val state by repository.widgetState.collectAsState(initial = initial)
             WidgetBody(state)
         }
     }
@@ -138,25 +142,26 @@ private fun metricsFor(height: Dp): Metrics = when {
 private fun WidgetBody(state: UsageState) {
     val size = LocalSize.current
     val m = metricsFor(size.height)
+    val openAccount = actionStartActivity(Intent(androidx.glance.LocalContext.current, MainActivity::class.java).putExtra(MainActivity.EXTRA_PROVIDER, state.provider.name))
     val needsLogin = state.status == UsageStatus.NOT_AUTHORIZED ||
         state.status == UsageStatus.SESSION_EXPIRED
 
     Column(
         modifier = GlanceModifier
             .fillMaxSize()
-            .background(ImageProvider(R.drawable.widget_card_bg))
+            .background(ImageProvider(if (state.provider == UsageProvider.CLAUDE) R.drawable.widget_card_claude_bg else R.drawable.widget_card_gpt_bg))
             .padding(m.cardPadding)
             .clickable(
                 if (needsLogin) {
-                    actionStartActivity<MainActivity>()
+                    openAccount
                 } else {
                     actionRunCallback<RefreshWidgetAction>()
                 }
             ),
     ) {
-        if (!m.header) Text(state.provider.label, style = TextStyle(color = ColorProvider(TEXT_SECONDARY), fontSize = 10.sp))
+        if (!m.header) Text(state.provider.displayLabel(), style = TextStyle(color = ColorProvider(ProviderColors.accent(state.provider)), fontSize = 10.sp))
         if (m.header) {
-            Header(m, state.provider.label)
+            Header(m, state.provider)
             Spacer(modifier = GlanceModifier.height(m.headerGap))
         }
 
@@ -168,6 +173,7 @@ private fun WidgetBody(state: UsageState) {
                 UsageTile(
                     window = window,
                     stale = state.isStale,
+                    provider = state.provider,
                     metrics = m,
                     widgetWidth = size.width,
                     modifier = GlanceModifier.defaultWeight(),
@@ -183,7 +189,7 @@ private fun WidgetBody(state: UsageState) {
 }
 
 @Composable
-private fun Header(m: Metrics, provider: String) {
+private fun Header(m: Metrics, provider: UsageProvider) {
     Row(
         modifier = GlanceModifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically,
@@ -192,18 +198,19 @@ private fun Header(m: Metrics, provider: String) {
         Row(
             modifier = GlanceModifier
                 .defaultWeight()
-                .clickable(actionStartActivity<MainActivity>()),
+                .clickable(actionStartActivity(Intent(androidx.glance.LocalContext.current, MainActivity::class.java).putExtra(MainActivity.EXTRA_PROVIDER, provider.name))),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            if (provider == "Claude") Image(
-                provider = ImageProvider(R.drawable.ic_claude_mark),
+            Image(
+                provider = ImageProvider(if (provider == UsageProvider.CLAUDE) R.drawable.ic_claude_mark else R.drawable.ic_gpt_mark),
+                colorFilter = ColorFilter.tint(ColorProvider(ProviderColors.accent(provider))),
                 contentDescription = "Открыть приложение",
                 modifier = GlanceModifier.size(m.headerIcon),
             )
             Spacer(modifier = GlanceModifier.width(8.dp))
             Text(
-                text = provider,
-                style = TextStyle(color = ColorProvider(TEXT_PRIMARY), fontSize = m.headerFont),
+                text = provider.displayLabel(),
+                style = TextStyle(color = ColorProvider(ProviderColors.accent(provider)), fontSize = m.headerFont),
                 maxLines = 1,
             )
         }
@@ -218,7 +225,7 @@ private fun Header(m: Metrics, provider: String) {
             Image(
                 provider = ImageProvider(R.drawable.ic_refresh),
                 contentDescription = "Обновить",
-                colorFilter = ColorFilter.tint(ColorProvider(TEXT_PRIMARY)),
+                colorFilter = ColorFilter.tint(ColorProvider(ProviderColors.accent(provider))),
                 modifier = GlanceModifier.size(m.headerIcon),
             )
         }
@@ -229,6 +236,7 @@ private fun Header(m: Metrics, provider: String) {
 private fun UsageTile(
     window: UsageWindow,
     stale: Boolean,
+    provider: UsageProvider,
     metrics: Metrics,
     widgetWidth: Dp,
     modifier: GlanceModifier = GlanceModifier,
@@ -268,6 +276,7 @@ private fun UsageTile(
             ProgressBar(
                 window = window,
                 stale = stale,
+                provider = provider,
                 metrics = metrics,
                 widgetWidth = widgetWidth,
             )
@@ -318,6 +327,7 @@ private fun UsageTile(
 private fun ProgressBar(
     window: UsageWindow,
     stale: Boolean,
+    provider: UsageProvider,
     metrics: Metrics,
     widgetWidth: Dp,
 ) {
@@ -346,7 +356,7 @@ private fun ProgressBar(
                 modifier = GlanceModifier
                     .width(elapsedWidth.dp)
                     .height(metrics.barHeight)
-                    .background(ImageProvider(R.drawable.widget_bar_elapsed)),
+                    .background(ImageProvider(if (provider == UsageProvider.CLAUDE) R.drawable.widget_bar_claude_elapsed else R.drawable.widget_bar_gpt_elapsed)),
             ) {}
         }
         // Расход рисуем последним, чтобы он был виден и когда отстаёт от времени,
@@ -356,7 +366,7 @@ private fun ProgressBar(
                 modifier = GlanceModifier
                     .width(usedWidth.dp)
                     .height(metrics.barHeight)
-                    .background(ImageProvider(fillDrawable(window.utilization, stale))),
+                    .background(ImageProvider(fillDrawable(window.utilization, stale, provider))),
             ) {}
         }
     }
@@ -416,11 +426,11 @@ private fun widgetWindows(snapshot: UsageSnapshot): List<UsageWindow> {
     return if (primary.isEmpty()) snapshot.windows.take(2) else primary
 }
 
-private fun fillDrawable(utilization: Double, stale: Boolean): Int = when {
+private fun fillDrawable(utilization: Double, stale: Boolean, provider: UsageProvider): Int = when {
     stale -> R.drawable.widget_bar_fill_stale
     UsageFormat.level(utilization) == UsageLevel.CRITICAL -> R.drawable.widget_bar_fill_critical
     UsageFormat.level(utilization) == UsageLevel.WARNING -> R.drawable.widget_bar_fill_warning
-    else -> R.drawable.widget_bar_fill
+    else -> if (provider == UsageProvider.CLAUDE) R.drawable.widget_bar_claude_fill else R.drawable.widget_bar_gpt_fill
 }
 
 private const val MIN_BAR_WIDTH = 40f
@@ -428,5 +438,5 @@ private const val MIN_BAR_WIDTH = 40f
 /** Запас вокруг стрелки обновления: сама иконка мелкая, пальцем в неё не попасть. */
 private val REFRESH_TOUCH_PADDING = 8.dp
 
-private val TEXT_PRIMARY = androidx.compose.ui.graphics.Color(0xFFF3F0F8)
-private val TEXT_SECONDARY = androidx.compose.ui.graphics.Color(0xFFA9A1B8)
+private val TEXT_PRIMARY = androidx.compose.ui.graphics.Color(0xFFF5F5F5)
+private val TEXT_SECONDARY = androidx.compose.ui.graphics.Color(0xFFA1A1AA)

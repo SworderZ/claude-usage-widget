@@ -7,7 +7,9 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.util.concurrent.TimeUnit
 
-enum class UsageProvider(val label: String) { CLAUDE("Claude"), CODEX("Codex") }
+enum class UsageProvider(val label: String) { CLAUDE("Claude"), CODEX("Codex");
+    fun displayLabel(): String = if (this == CLAUDE) "Claude" else "GPT · Codex"
+}
 
 class OpenAiImportException(message: String) : IllegalArgumentException(message)
 
