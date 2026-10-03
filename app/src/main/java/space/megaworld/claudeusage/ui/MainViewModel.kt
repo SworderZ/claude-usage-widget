@@ -12,6 +12,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import space.megaworld.claudeusage.AppGraph
+import space.megaworld.claudeusage.glyph.UsageForegroundService
 import space.megaworld.claudeusage.data.ApiResult
 import space.megaworld.claudeusage.data.GlyphRenderMode
 import space.megaworld.claudeusage.data.RefreshResult
@@ -81,6 +82,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun setGlyphRenderMode(mode: GlyphRenderMode) = runBusy {
         graph.usageRepository.setGlyphRenderMode(mode)
+    }
+
+    fun testA() = runBusy {
+        UsageForegroundService.testA(getApplication())
+        _message.value = "Проверка A запущена на 5 секунд. Посмотрите на подсветку сзади."
     }
 
     fun setIdleEnabled(enabled: Boolean) = runBusy {

@@ -11,12 +11,15 @@ import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.os.Build
 import android.os.IBinder
+import android.os.PowerManager
+import android.os.SystemClock
 import androidx.glance.appwidget.updateAll
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import space.megaworld.claudeusage.AppGraph
 import space.megaworld.claudeusage.R
@@ -52,11 +55,15 @@ class UsageForegroundService : Service() {
         IdleTracker(this) {
             renderGlyph()
             scheduleAmbientTick()
+            lastState?.let { notify(buildNotification(statusText(it))) }
         }
     }
     private var idleTracking = false
     private var started = false
     private var glyphConnected = false
+    private var aPreviewUntil = 0L
+    private var aPreviewGeneration = 0L
+    private var aPreviewJob: Job? = null
     private var lastInterval = SettingsStore.DEFAULT_INTERVAL_MINUTES
 
     /** Последнее известное состояние: из него строится текст уведомления. */
@@ -84,10 +91,12 @@ class UsageForegroundService : Service() {
         }
         when (intent?.action) {
             ACTION_TICK -> runTick()
+            ACTION_TEST_A -> previewA()
             // Простой вырос — перерисовываем кадр и заводим следующую проверку.
             ACTION_AMBIENT_TICK -> {
                 renderGlyph()
                 scheduleAmbientTick()
+                lastState?.let { notify(buildNotification(statusText(it))) }
             }
             else -> scheduleNextTick()
         }
@@ -95,6 +104,9 @@ class UsageForegroundService : Service() {
     }
 
     override fun onDestroy() {
+        aPreviewGeneration++
+        aPreviewUntil = 0L
+        aPreviewJob?.cancel()
         cancelTick()
         cancelAmbientTick()
         if (idleTracking) {
@@ -181,7 +193,9 @@ class UsageForegroundService : Service() {
         return GlyphController.Request(
             cPercent = state.snapshot?.fiveHour?.utilization?.roundToInt(),
             mode = state.glyphRenderMode,
-            aLight = if (ambient.idleEnabled) {
+            aLight = if (SystemClock.elapsedRealtime() < aPreviewUntil) {
+                GlyphLight.MAX
+            } else if (ambient.idleEnabled) {
                 GlyphLight.forIdle(idleTracker.idleMillis, ambient.idleThresholdMinutes)
             } else {
                 GlyphLight.OFF
@@ -256,36 +270,56 @@ class UsageForegroundService : Service() {
         getSystemService(AlarmManager::class.java)?.cancel(tickIntent(this))
     }
 
-    /**
-     * Отдельный будильник для канала A: его яркость зависит от того, сколько
-     * телефон лежит, а не от данных, и общий интервал обновления тут не годится —
-     * он может быть и час, и настроен совсем под другое.
-     *
-     * Шаг — четверть порога: ровно столько, чтобы разгорание прошло заметными
-     * ступенями. Будильник неточный и без RTC_WAKEUP: разбудить телефон ради
-     * яркости светодиода незачем, а в Doze система подтянет тик сама, когда
-     * проснётся по другому поводу.
-     */
+    /** Первый будильник — на пороге A. WAKEUP доставляет его при спящем экране. */
     private fun scheduleAmbientTick() {
-        val ambient = lastState?.ambient
-        val wanted = ambient != null &&
-            ambient.idleEnabled &&
-            lastState?.glyphEnabled == true &&
-            glyph.isSupportedDevice
-        if (!wanted) {
+        val state = lastState
+        val ambient = state?.ambient
+        if (ambient == null || !ambient.idleEnabled || !state.glyphEnabled || !glyph.isSupportedDevice) {
             cancelAmbientTick()
             return
         }
-        // Пока экран горит, простоя нет и перерисовывать нечего: следующий кадр
-        // закажет сам IdleTracker, когда экран погаснет.
-        if (idleTracker.idleMillis == 0L) {
+        val at = idleTracker.nextUpdateAt(ambient.idleThresholdMinutes) ?: run {
             cancelAmbientTick()
             return
         }
         val manager = getSystemService(AlarmManager::class.java) ?: return
-        val stepMinutes = (ambient.idleThresholdMinutes / 4).coerceAtLeast(MIN_AMBIENT_STEP_MINUTES)
-        val at = System.currentTimeMillis() + stepMinutes.toLong() * 60_000L
-        manager.setAndAllowWhileIdle(AlarmManager.RTC, at, ambientTickIntent(this))
+        val pending = ambientTickIntent(this)
+        try {
+            if (canScheduleExact(this)) {
+                manager.setExactAndAllowWhileIdle(AlarmManager.ELAPSED_REALTIME_WAKEUP, at, pending)
+            } else {
+                manager.setAndAllowWhileIdle(AlarmManager.ELAPSED_REALTIME_WAKEUP, at, pending)
+            }
+        } catch (_: SecurityException) {
+            // Разрешение могли отозвать между проверкой и постановкой будильника.
+            manager.setAndAllowWhileIdle(AlarmManager.ELAPSED_REALTIME_WAKEUP, at, pending)
+        }
+    }
+
+    /** Проверка физического A на полной яркости без ожидания и изменения настроек. */
+    private fun previewA() {
+        val generation = ++aPreviewGeneration
+        aPreviewUntil = SystemClock.elapsedRealtime() + A_PREVIEW_MILLIS
+        aPreviewJob?.cancel()
+        aPreviewJob = scope.launch {
+            val wakeLock = getSystemService(PowerManager::class.java)?.newWakeLock(
+                PowerManager.PARTIAL_WAKE_LOCK, "AIUsage:A-preview",
+            )
+            try {
+                // Даём тесту закончиться через 5 секунд, даже если пользователь заблокирует экран.
+                wakeLock?.acquire(A_PREVIEW_MILLIS + 5_000L)
+                renderGlyph()
+                lastState?.let { notify(buildNotification(statusText(it))) }
+                delay(A_PREVIEW_MILLIS)
+            } finally {
+                if (generation == aPreviewGeneration) {
+                    aPreviewUntil = 0L
+                    renderGlyph()
+                    lastState?.let { notify(buildNotification(statusText(it))) }
+                }
+                if (wakeLock?.isHeld == true) wakeLock.release()
+            }
+        }
     }
 
     private fun cancelAmbientTick() {
@@ -295,12 +329,23 @@ class UsageForegroundService : Service() {
     private fun statusText(state: UsageState): String {
         glyph.lastError?.let { if (state.glyphEnabled) return it }
         val percent = state.snapshot?.fiveHour?.utilization?.roundToInt()
-        val head = state.provider.label + " · " + if (percent == null) "Нет данных" else "5ч: $percent%"
+        val head = state.provider.displayLabel() + " · " + if (percent == null) "Нет данных" else "5ч: $percent%"
         // Время последнего обновления здесь не для красоты: по нему видно, тикает
         // ли служба вообще.
         val updated = UsageFormat.updatedAt(state.snapshot?.fetchedAtMillis ?: 0L)
+        val aStatus = when {
+            !state.glyphEnabled -> ""
+            SystemClock.elapsedRealtime() < aPreviewUntil -> " · A: проверка 5 секунд"
+            !state.ambient.idleEnabled -> " · A: выключен"
+            idleTracker.screenOn -> " · A: экран включён"
+            else -> {
+                val minutes = idleTracker.idleMillis / 60_000L
+                " · A: $minutes/${state.ambient.idleThresholdMinutes} мин" +
+                    if (minutes >= state.ambient.idleThresholdMinutes) " · порог достигнут" else ""
+            }
+        }
         return head + " · обновлено " + updated +
-            " · раз в " + state.refreshIntervalMinutes + " мин"
+            " · раз в " + state.refreshIntervalMinutes + " мин" + aStatus
     }
 
     private fun startForegroundCompat(notification: Notification) {
@@ -327,8 +372,10 @@ class UsageForegroundService : Service() {
             PendingIntent.FLAG_IMMUTABLE,
         )
         return Notification.Builder(this, CHANNEL_ID)
-            .setContentTitle("Claude Usage")
+            .setContentTitle("AI Usage")
             .setContentText(text)
+            .setStyle(Notification.BigTextStyle().bigText(text))
+            .setOnlyAlertOnce(true)
             .setSmallIcon(R.drawable.ic_notification_claude)
             .setContentIntent(open)
             .setOngoing(true)
@@ -355,11 +402,10 @@ class UsageForegroundService : Service() {
         private const val ACTION_STOP = "space.megaworld.claudeusage.STOP_SERVICE"
         private const val ACTION_TICK = "space.megaworld.claudeusage.TICK"
         private const val ACTION_AMBIENT_TICK = "space.megaworld.claudeusage.AMBIENT_TICK"
+        private const val ACTION_TEST_A = "space.megaworld.claudeusage.TEST_A"
+        private const val A_PREVIEW_MILLIS = 5_000L
         private const val TICK_REQUEST = 7
         private const val AMBIENT_REQUEST = 8
-
-        /** Чаще смысла нет: ступень разгорания столько и длится. */
-        private const val MIN_AMBIENT_STEP_MINUTES = 5
 
         private fun ambientTickIntent(context: Context): PendingIntent {
             val intent = Intent(context, UsageForegroundService::class.java)
@@ -388,6 +434,10 @@ class UsageForegroundService : Service() {
 
         fun start(context: Context) {
             context.startForegroundService(Intent(context, UsageForegroundService::class.java))
+        }
+
+        fun testA(context: Context) {
+            context.startForegroundService(Intent(context, UsageForegroundService::class.java).setAction(ACTION_TEST_A))
         }
 
         fun stop(context: Context) {

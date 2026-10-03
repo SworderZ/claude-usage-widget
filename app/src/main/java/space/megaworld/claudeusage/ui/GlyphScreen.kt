@@ -1,5 +1,9 @@
 package space.megaworld.claudeusage.ui
 
+import android.content.Intent
+import android.net.Uri
+import android.os.Build
+import android.provider.Settings
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -9,6 +13,9 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.compose.ui.unit.dp
 import space.megaworld.claudeusage.data.AmbientSettings
 import space.megaworld.claudeusage.data.GlyphRenderMode
@@ -17,6 +24,7 @@ import space.megaworld.claudeusage.data.UsageProvider
 import space.megaworld.claudeusage.data.UsageState
 import space.megaworld.claudeusage.data.WeatherPlace
 import space.megaworld.claudeusage.glyph.GlyphSupport
+import space.megaworld.claudeusage.glyph.UsageForegroundService
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -28,6 +36,7 @@ fun GlyphScreen(
     onToggleGlyph: (Boolean) -> Unit,
     onSelectGlyphMode: (GlyphRenderMode) -> Unit,
     onToggleIdle: (Boolean) -> Unit,
+    onTestA: () -> Unit,
     onSelectIdleMinutes: (Int) -> Unit,
     onToggleRain: (Boolean) -> Unit,
     onSelectPlace: (String) -> Unit,
@@ -65,7 +74,7 @@ fun GlyphScreen(
                 Spacer(Modifier.height(16.dp))
                 AmbientSetting(
                     settings = state.ambient, forecast = state.rainForecast, busy = busy,
-                    onToggleIdle = onToggleIdle, onSelectIdleMinutes = onSelectIdleMinutes,
+                    onToggleIdle = onToggleIdle, onTestA = onTestA, onSelectIdleMinutes = onSelectIdleMinutes,
                     onToggleRain = onToggleRain, onSelectPlace = onSelectPlace, onClearPlace = onClearPlace,
                 )
                 Spacer(Modifier.height(20.dp))
@@ -109,6 +118,7 @@ private fun AmbientSetting(
     forecast: RainForecast?,
     busy: Boolean,
     onToggleIdle: (Boolean) -> Unit,
+    onTestA: () -> Unit,
     onSelectIdleMinutes: (Int) -> Unit,
     onToggleRain: (Boolean) -> Unit,
     onSelectPlace: (String) -> Unit,
@@ -139,6 +149,11 @@ private fun AmbientSetting(
             Switch(checked = settings.idleEnabled, onCheckedChange = onToggleIdle, enabled = !busy)
         }
 
+        Spacer(modifier = Modifier.height(8.dp))
+        OutlinedButton(onClick = onTestA, enabled = !busy) { Text("Проверить A · 5 секунд") }
+        Text("Зажигает A на полной яркости и возвращает обычную индикацию. Экран можно оставить включённым.",
+            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+
         if (settings.idleEnabled) {
             Spacer(modifier = Modifier.height(8.dp))
             Card(modifier = Modifier.fillMaxWidth()) {
@@ -154,6 +169,7 @@ private fun AmbientSetting(
                     )
                 }
             }
+            IdleAlarmNotice()
             Spacer(modifier = Modifier.height(12.dp))
             Text(text = "Загорается через", style = MaterialTheme.typography.bodyMedium)
             AmbientSettings.ALLOWED_IDLE_MINUTES.forEach { minutes ->
@@ -331,5 +347,30 @@ private fun GlyphSetting(
             }
         }
 
+    }
+}
+
+@Composable
+private fun IdleAlarmNotice() {
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) return
+    val context = LocalContext.current
+    var exactAllowed by remember { mutableStateOf(UsageForegroundService.canScheduleExact(context)) }
+    LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
+        exactAllowed = UsageForegroundService.canScheduleExact(context)
+    }
+    if (exactAllowed) return
+    Spacer(Modifier.height(12.dp))
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(12.dp)) {
+            Text("Срабатывание A во время сна", style = MaterialTheme.typography.titleSmall)
+            Spacer(Modifier.height(4.dp))
+            Text("Разрешите точные будильники, чтобы A загорался ближе к выбранному времени. " +
+                "Без разрешения Android может отложить подсветку.",
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            OutlinedButton(onClick = {
+                context.startActivity(Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM)
+                    .setData(Uri.parse("package:" + context.packageName)))
+            }) { Text("Разрешить будильники") }
+        }
     }
 }

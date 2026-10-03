@@ -173,6 +173,7 @@ private fun AppRoot(onOpenLogin: () -> Unit, onOpenManualLogin: () -> Unit) {
                             onToggleGlyph = viewModel::setGlyphEnabled,
                             onSelectGlyphMode = viewModel::setGlyphRenderMode,
                             onToggleIdle = viewModel::setIdleEnabled,
+                            onTestA = viewModel::testA,
                             onSelectIdleMinutes = viewModel::setIdleThresholdMinutes,
                             onToggleRain = viewModel::setRainEnabled,
                             onSelectPlace = viewModel::selectWeatherPlace,
