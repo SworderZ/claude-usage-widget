@@ -1,12 +1,12 @@
 package space.megaworld.claudeusage.ui
 
 import android.os.Bundle
+import androidx.activity.enableEdgeToEdge
+import androidx.activity.SystemBarStyle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.verticalScroll
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
@@ -56,29 +56,21 @@ class OpenAiLoginActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        enableEdgeToEdge(
+            statusBarStyle = SystemBarStyle.dark(android.graphics.Color.TRANSPARENT),
+            navigationBarStyle = SystemBarStyle.dark(android.graphics.Color.TRANSPARENT),
+        )
         setContent {
             ClaudeUsageTheme(provider = space.megaworld.claudeusage.data.UsageProvider.CODEX) {
-                Surface(modifier = Modifier.fillMaxSize()) {
-                    Column(modifier = Modifier.padding(20.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                        Text("Подключить Codex", style = MaterialTheme.typography.headlineSmall)
-                        Text("На компьютере с выполненным входом Codex найдите файл .codex/auth.json в папке пользователя. Перенесите его на телефон и выберите ниже.")
-                        Text("Файл содержит секреты аккаунта. Не отправляйте его в чаты. После импорта удалите перенесённую копию. Приложение хранит access token зашифрованным и не использует refresh token компьютера.", style = MaterialTheme.typography.bodySmall)
-                        Text("Если VPN работает по списку приложений, включите в маршрут tinyGlyph (space.megaworld.claudeusage). Открывающийся браузер не подтверждает, что это приложение идёт тем же маршрутом.", style = MaterialTheme.typography.bodySmall)
-                        Text("Когда access token истечёт, потребуется импорт свежего файла. Это подключение показывает лимиты Codex, а не количество оставшихся сообщений ChatGPT.")
-                        Button(onClick = { pickFile.launch(arrayOf("application/json", "text/plain", "application/octet-stream")) }, enabled = !busy) { Text("Выбрать файл входа") }
-                        OutlinedButton(onClick = {
-                            busy = true
-                            lifecycleScope.launch {
-                                try { networkStatus = OpenAiUsageClient().checkConnectivity() }
-                                finally { busy = false }
-                            }
-                        }, enabled = !busy) { Text("Проверить доступ к OpenAI") }
-                        networkStatus?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
-                        error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
-                        if (busy) CircularProgressIndicator()
-                        OutlinedButton(onClick = { finish() }, enabled = !busy) { Text("Назад") }
-                    }
-                }
+                OpenAiLoginContent(busy, error, networkStatus,
+                    onPickFile = { pickFile.launch(arrayOf("application/json", "text/plain", "application/octet-stream")) },
+                    onCheckNetwork = {
+                        busy = true
+                        lifecycleScope.launch {
+                            try { networkStatus = OpenAiUsageClient().checkConnectivity() }
+                            finally { busy = false }
+                        }
+                    }, onBack = { finish() })
             }
         }
     }
@@ -94,4 +86,36 @@ private fun java.io.InputStream.readBytesLimited(): ByteArray {
         out.write(buffer, 0, count)
     }
     return out.toByteArray()
+}
+
+@Composable
+internal fun OpenAiLoginContent(busy: Boolean, error: String?, networkStatus: String?,
+    onPickFile: () -> Unit, onCheckNetwork: () -> Unit, onBack: () -> Unit) {
+    Scaffold(topBar = { AppTopBar("Подключить Codex", "Лимиты вашей подписки GPT", onBack) }) { padding ->
+        ScreenColumn(padding) {
+            BusyLine(busy)
+            SectionCard {
+                Text("Перенесите файл входа", style = MaterialTheme.typography.titleMedium)
+                SupportingText("1. На компьютере войдите в Codex.")
+                SupportingText("2. Найдите .codex/auth.json в папке пользователя.")
+                SupportingText("3. Перенесите файл на телефон и выберите его ниже.")
+                Button(onClick = onPickFile, enabled = !busy, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) {
+                    Text("Выбрать auth.json")
+                }
+            }
+            error?.let { MessageCard(it, error = true) }
+            SectionCard {
+                Text("Подключение через VPN", style = MaterialTheme.typography.titleSmall)
+                SupportingText("Если VPN работает по списку приложений, добавьте tinyGlyph в маршрут. Доступ в браузере не гарантирует доступ в приложении.")
+                OutlinedButton(onClick = onCheckNetwork, enabled = !busy,
+                    modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("Проверить доступ к OpenAI") }
+                networkStatus?.let { SupportingText(it) }
+            }
+            ExpandableSection("О файле входа и лимитах") {
+                SupportingText("Файл содержит доступ к аккаунту. После импорта удалите перенесённую копию и не отправляйте её в чаты.")
+                SupportingText("Токен хранится зашифрованным. Когда он истечёт, импортируйте свежий файл. Refresh token компьютера не используется.")
+                SupportingText("Подключение показывает лимиты Codex. Количество оставшихся сообщений в обычных переписках ChatGPT недоступно.")
+            }
+        }
+    }
 }

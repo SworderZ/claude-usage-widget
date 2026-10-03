@@ -13,3 +13,12 @@ local.properties
 # Артефакты сборки не храним в репозитории, они уходят в релизы
 *.apk
 *.aab
+
+# Signing material must stay outside version control.
+*.keystore
+*.jks
+*.p12
+keystore.properties
+signing.properties
+
+/release/

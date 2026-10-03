@@ -9,8 +9,11 @@ import android.webkit.WebResourceResponse
 import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import androidx.activity.enableEdgeToEdge
+import androidx.activity.SystemBarStyle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -23,7 +26,10 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.Surface
+import androidx.compose.material3.Scaffold
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.consumeWindowInsets
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -56,14 +62,18 @@ class LoginActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        enableEdgeToEdge(
+            statusBarStyle = SystemBarStyle.dark(android.graphics.Color.TRANSPARENT),
+            navigationBarStyle = SystemBarStyle.dark(android.graphics.Color.TRANSPARENT),
+        )
         setContent {
             ClaudeUsageTheme {
                 var status by remember { mutableStateOf<String?>(null) }
                 var diagnostics by remember { mutableStateOf<String?>(null) }
                 var reloadToken by remember { mutableStateOf(0) }
 
-                Surface(modifier = Modifier.fillMaxSize()) {
-                    Box(modifier = Modifier.fillMaxSize()) {
+                Scaffold(topBar = { AppTopBar("Войти в Claude", onBack = { finish() }) }) { padding ->
+                    Box(modifier = Modifier.fillMaxSize().padding(padding).consumeWindowInsets(padding).imePadding()) {
                         LoginWebView(
                             reloadToken = reloadToken,
                             onCookiesReady = { cookieHeader, userAgent ->
@@ -92,6 +102,8 @@ class LoginActivity : ComponentActivity() {
                                 modifier = Modifier
                                     .align(Alignment.BottomCenter)
                                     .fillMaxWidth()
+                                    .padding(16.dp)
+                                    .background(MaterialTheme.colorScheme.surface, MaterialTheme.shapes.large)
                                     .padding(16.dp),
                                 horizontalAlignment = Alignment.CenterHorizontally,
                             ) {
@@ -262,6 +274,7 @@ private fun DiagnosticsCard(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier
                     .padding(top = 4.dp)
+                    .heightIn(max = 180.dp)
                     .verticalScroll(rememberScrollState()),
             )
             Row(modifier = Modifier.padding(top = 8.dp)) {

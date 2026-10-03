@@ -129,7 +129,27 @@ The Nothing Glyph SDK is bundled in `app/libs/glyph-matrix-sdk-2.0.aar`.
 ./gradlew testDebugUnitTest lintDebug
 ```
 
-The APK is written to `app/build/outputs/apk/debug/app-debug.apk`.
+The debug APK is written to `app/build/outputs/apk/debug/app-debug.apk`.
+
+GitHub Actions builds both variants and runs unit tests and lint on pushes to `main`
+and pull requests. Debug APKs are available as workflow artifacts. A version tag
+such as `v0.14.0` builds and publishes the signed release APK automatically.
+
+For a new release, update `versionCode` and `versionName` in `app/build.gradle.kts`,
+add concise English user-facing notes in `release-notes/vVERSION.md`, and push the
+matching tag. Only the APK is attached to the release. The publishing workflow can
+also be run manually for an existing tag.
+
+Release signing uses these repository Actions secrets: `ANDROID_KEYSTORE_BASE64`,
+`ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS`, and `ANDROID_KEY_PASSWORD`. Keep
+an independent backup of the signing key. Its certificate must match existing
+installs; the packaging check rejects debug APKs and different signing identities.
+
+To build a signed release locally, set `ANDROID_KEYSTORE_PATH`,
+`ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS`, and `ANDROID_KEY_PASSWORD`, then
+run `./gradlew assembleRelease`. Without these variables the release variant is
+unsigned, for CI validation only. Signing files and credentials must stay outside
+the repository.
 
 The app uses Kotlin, Compose, Glance, WorkManager, DataStore, and Tink. `UsageRepository`
 feeds both the widgets and Glyph; `AppGraph` supplies shared dependencies. Credentials

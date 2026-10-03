@@ -1,40 +1,14 @@
 package space.megaworld.claudeusage.ui
 
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Button
-import androidx.compose.material3.Card
-import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.LinearProgressIndicator
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
+import androidx.compose.foundation.layout.*
+import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
-import space.megaworld.claudeusage.R
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import space.megaworld.claudeusage.data.UsageProvider
-import space.megaworld.claudeusage.data.UsageState
-import space.megaworld.claudeusage.data.UsageStatus
-import space.megaworld.claudeusage.data.UsageWindow
+import space.megaworld.claudeusage.R
+import space.megaworld.claudeusage.data.*
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MainScreen(
     state: UsageState,
@@ -48,139 +22,64 @@ fun MainScreen(
     onSelectProvider: (UsageProvider) -> Unit,
     onOpenAiLogin: () -> Unit,
 ) {
-    Scaffold(
-        topBar = { TopAppBar(title = { Text(stringResource(R.string.app_name)) }) },
-    ) { innerPadding ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(innerPadding)
-                .verticalScroll(rememberScrollState())
-                .padding(horizontal = 16.dp, vertical = 8.dp),
-        ) {
-            ProviderPicker(selected = state.provider, enabled = !busy, onSelect = onSelectProvider)
-            Spacer(modifier = Modifier.height(16.dp))
-            Text("Расход " + state.provider.displayLabel(), style = MaterialTheme.typography.titleMedium)
-            Spacer(modifier = Modifier.height(12.dp))
-            StatusBanner(state = state, message = message, onDismissMessage = onDismissMessage)
-
+    Scaffold(topBar = { AppTopBar(stringResource(R.string.app_name), "Лимиты всегда под рукой") }) { padding ->
+        ScreenColumn(padding) {
+            ProviderPicker(state.provider, !busy, onSelectProvider)
+            BusyLine(busy)
+            val needsLogin = state.status == UsageStatus.NOT_AUTHORIZED || state.status == UsageStatus.SESSION_EXPIRED
+            if (needsLogin) {
+                SectionCard {
+                    Text(if (state.status == UsageStatus.SESSION_EXPIRED) "Подключите аккаунт заново" else "Подключите ${state.provider.label}",
+                        style = MaterialTheme.typography.titleMedium)
+                    SupportingText(if (state.status == UsageStatus.SESSION_EXPIRED)
+                        "Сессия истекла или сервер запросил проверку. Войдите снова, чтобы обновлять лимиты."
+                        else "Следите за расходом лимитов в приложении, виджете и на подсветке Glyph.")
+                    Button(onClick = if (state.provider == UsageProvider.CODEX) onOpenAiLogin else onLogin,
+                        enabled = !busy, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) { Text("Подключить аккаунт") }
+                    if (state.provider == UsageProvider.CLAUDE) {
+                        OutlinedButton(onClick = onManualLogin, enabled = !busy,
+                            modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("Войти по ключу сессии") }
+                    }
+                }
+            }
+            if (state.status == UsageStatus.NETWORK_ERROR) {
+                MessageCard(if (state.hasData) "Не удалось обновить лимиты. Показаны последние сохранённые данные."
+                    else "Не удалось загрузить лимиты. Проверьте подключение и попробуйте ещё раз.", error = true)
+            }
+            if (!message.isNullOrBlank()) MessageCard(message, onDismiss = onDismissMessage)
             if (state.hasData) {
                 state.snapshot?.windows?.forEach { window ->
-                    UsageRow(window = window, stale = state.isStale, provider = state.provider)
-                    Spacer(modifier = Modifier.height(16.dp))
+                    UsageCard(window, state.isStale, state.provider, window.key == UsageSnapshot.KEY_FIVE_HOUR)
                 }
-                HorizontalDivider()
-                Spacer(modifier = Modifier.height(8.dp))
-                Text(
-                    text = "Обновлено: " + UsageFormat.updatedAt(state.snapshot?.fetchedAtMillis ?: 0L),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            } else if (state.status != UsageStatus.NOT_AUTHORIZED) {
-                Text(
-                    text = "Данных пока нет.",
-                    style = MaterialTheme.typography.bodyMedium,
-                )
+                SupportingText("Обновлено: " + UsageFormat.updatedAt(state.snapshot?.fetchedAtMillis ?: 0L))
+            } else if (!needsLogin && state.status != UsageStatus.NETWORK_ERROR) {
+                SectionCard {
+                    Text("Лимиты ещё не загружены", style = MaterialTheme.typography.titleMedium)
+                    SupportingText("Обновите данные, чтобы увидеть расход текущего окна и недели.")
+                }
             }
-
-            if (state.provider == UsageProvider.CODEX) {
-                Spacer(modifier = Modifier.height(16.dp))
-                ChatGptAvailability()
+            if (!needsLogin) {
+                Button(onClick = onRefresh, enabled = !busy, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) { Text("Обновить лимиты") }
             }
-            Spacer(modifier = Modifier.height(24.dp))
-
-            if (busy) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.Center,
-                ) {
-                    CircularProgressIndicator()
-                }
-                Spacer(modifier = Modifier.height(16.dp))
-            }
-
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                if (state.status == UsageStatus.NOT_AUTHORIZED || state.status == UsageStatus.SESSION_EXPIRED) {
-                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                        Button(onClick = if (state.provider == UsageProvider.CODEX) onOpenAiLogin else onLogin, enabled = !busy) {
-                            Text(text = "Подключить")
-                        }
-                        if (state.provider == UsageProvider.CLAUDE) {
-                            OutlinedButton(onClick = onManualLogin, enabled = !busy) { Text(text = "Ключ вручную") }
-                        }
-                    }
-                }
-                if (state.status != UsageStatus.NOT_AUTHORIZED) {
-                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                        Button(onClick = onRefresh, enabled = !busy) { Text(text = "Обновить") }
-                        OutlinedButton(onClick = onLogout, enabled = !busy) { Text(text = "Выйти") }
-                    }
-                }
+            if (state.provider == UsageProvider.CODEX) ChatGptAvailability()
+            if (state.status != UsageStatus.NOT_AUTHORIZED) {
+                TextButton(onClick = onLogout, enabled = !busy, modifier = Modifier.fillMaxWidth()) { Text("Выйти из ${state.provider.label}") }
             }
         }
     }
 }
 
 @Composable
-private fun StatusBanner(state: UsageState, message: String?, onDismissMessage: () -> Unit) {
-    val banner = when (state.status) {
-        UsageStatus.NOT_AUTHORIZED -> "Аккаунт ${state.provider.label} не подключён."
-        UsageStatus.SESSION_EXPIRED ->
-            "Сессия ${state.provider.label} истекла или сервер требует проверку. Подключите аккаунт заново."
-        UsageStatus.NETWORK_ERROR ->
-            "Не удалось обновить данные" + (message?.let { ": $it" } ?: "") + ". Показан кеш."
-        UsageStatus.NEVER_LOADED -> "Данные ещё не загружались."
-        UsageStatus.OK -> message
-    }
-    if (banner.isNullOrBlank()) return
-    Card(modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp)) {
-        Column(modifier = Modifier.padding(12.dp)) {
-            Text(text = banner, style = MaterialTheme.typography.bodyMedium)
-            if (state.status == UsageStatus.OK && message != null) {
-                Spacer(modifier = Modifier.height(4.dp))
-                OutlinedButton(onClick = onDismissMessage) { Text(text = "Скрыть") }
-            }
-        }
-    }
-}
-
-@Composable
-private fun UsageRow(window: UsageWindow, stale: Boolean, provider: UsageProvider) {
-    val level = UsageFormat.level(window.utilization)
-    val color = UsageColors.forLevel(level, provider).let { if (stale) it.copy(alpha = 0.45f) else it }
-    Column(modifier = Modifier.fillMaxWidth()) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text(
-                text = UsageFormat.windowLabel(window.key),
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.SemiBold,
-                modifier = Modifier.weight(1f),
-            )
-            Text(
-                text = UsageFormat.percent(window.utilization),
-                style = MaterialTheme.typography.titleMedium,
-                color = color,
-                fontWeight = FontWeight.Bold,
-            )
-        }
-        Spacer(modifier = Modifier.height(6.dp))
-        LinearProgressIndicator(
-            progress = { UsageFormat.fraction(window.utilization) },
-            modifier = Modifier.fillMaxWidth().height(8.dp),
-            color = color,
-            trackColor = Color(0x33808080),
-        )
-        val hint = UsageFormat.resetHint(window.resetsAtMillis)
-        if (hint != null) {
-            Spacer(modifier = Modifier.height(4.dp))
-            Text(
-                text = hint,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
+private fun UsageCard(window: UsageWindow, stale: Boolean, provider: UsageProvider, primary: Boolean) {
+    val color = UsageColors.forLevel(UsageFormat.level(window.utilization), provider).let { if (stale) it.copy(alpha = 0.5f) else it }
+    SectionCard {
+        Text(UsageFormat.windowLabel(window.key), style = MaterialTheme.typography.titleSmall)
+        Text(UsageFormat.percent(window.utilization),
+            style = if (primary) MaterialTheme.typography.displaySmall else MaterialTheme.typography.headlineMedium, color = color)
+        LinearProgressIndicator(progress = { UsageFormat.fraction(window.utilization) },
+            modifier = Modifier.fillMaxWidth().height(if (primary) 10.dp else 8.dp), color = color,
+            trackColor = MaterialTheme.colorScheme.surfaceContainerHighest)
+        UsageFormat.resetHint(window.resetsAtMillis)?.let { SupportingText(it) }
+        if (stale) SupportingText("Сохранённые данные")
     }
 }

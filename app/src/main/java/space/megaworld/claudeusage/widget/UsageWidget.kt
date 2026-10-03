@@ -139,9 +139,10 @@ private fun metricsFor(height: Dp): Metrics = when {
 }
 
 @Composable
-private fun WidgetBody(state: UsageState) {
+internal fun WidgetBody(state: UsageState) {
     val size = LocalSize.current
-    val m = metricsFor(size.height)
+    val fontScale = androidx.glance.LocalContext.current.resources.configuration.fontScale.coerceAtLeast(1f)
+    val m = metricsFor((size.height.value / fontScale).dp)
     val openAccount = actionStartActivity(Intent(androidx.glance.LocalContext.current, MainActivity::class.java).putExtra(MainActivity.EXTRA_PROVIDER, state.provider.name))
     val needsLogin = state.status == UsageStatus.NOT_AUTHORIZED ||
         state.status == UsageStatus.SESSION_EXPIRED
@@ -166,7 +167,10 @@ private fun WidgetBody(state: UsageState) {
         }
 
         if (state.hasData) {
-            val windows = widgetWindows(state.snapshot!!)
+            val windows = widgetWindows(state.snapshot!!).let {
+                // The smallest resized widget can fit one window at large font sizes.
+                if (size.height.value < 80f * fontScale) it.take(1) else it
+            }
             windows.forEachIndexed { index, window ->
                 // defaultWeight: плитки делят остаток высоты поровну, что бы ни
                 // осталось после шапки — так нижняя не уезжает за край.

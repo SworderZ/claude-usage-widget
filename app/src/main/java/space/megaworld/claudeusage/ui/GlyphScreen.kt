@@ -4,331 +4,207 @@ import android.content.Intent
 import android.net.Uri
 import android.os.Build
 import android.provider.Settings
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
-import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
-import androidx.compose.ui.unit.dp
-import space.megaworld.claudeusage.data.AmbientChannel
-import space.megaworld.claudeusage.data.GlyphChannelMode
-import space.megaworld.claudeusage.data.AmbientSettings
-import space.megaworld.claudeusage.data.GlyphRenderMode
-import space.megaworld.claudeusage.data.GlyphStripMode
-import space.megaworld.claudeusage.data.RainForecast
-import space.megaworld.claudeusage.data.UsageState
-import space.megaworld.claudeusage.data.WeatherPlace
+import space.megaworld.claudeusage.R
+import space.megaworld.claudeusage.data.*
 import space.megaworld.claudeusage.glyph.GlyphSupport
 import space.megaworld.claudeusage.glyph.UsageForegroundService
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun GlyphScreen(
-    state: UsageState,
-    busy: Boolean,
-    message: String?,
-    onDismissMessage: () -> Unit,
-    onToggleGlyph: (Boolean) -> Unit,
-    onSelectGlyphMode: (GlyphRenderMode) -> Unit,
+    state: UsageState, busy: Boolean, message: String?, onDismissMessage: () -> Unit,
+    onToggleGlyph: (Boolean) -> Unit, onSelectGlyphMode: (GlyphRenderMode) -> Unit,
     onSelectStripMode: (GlyphStripMode) -> Unit,
     onSelectChannelMode: (AmbientChannel, GlyphChannelMode) -> Unit,
-    onTestChannel: (AmbientChannel) -> Unit,
-    onSelectIdleMinutes: (Int) -> Unit,
-    onAddPlace: (String) -> Unit,
-    onSelectPlace: (WeatherPlace) -> Unit,
+    onTestChannel: (AmbientChannel) -> Unit, onSelectIdleMinutes: (Int) -> Unit,
+    onAddPlace: (String) -> Unit, onSelectPlace: (WeatherPlace) -> Unit,
     onRemovePlace: (WeatherPlace) -> Unit,
+    supported: Boolean = GlyphSupport.isAvailable,
 ) {
-    Scaffold(topBar = { TopAppBar(title = { Text("Glyph") }) }) { innerPadding ->
-        Column(
-            modifier = Modifier.fillMaxSize().padding(innerPadding)
-                .verticalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 8.dp),
-        ) {
-            if (!GlyphSupport.isAvailable) {
-                Text("Индикация доступна на Nothing Phone (2a) и (2a) Plus.", style = MaterialTheme.typography.bodyLarge)
-                return@Column
-            }
-            Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text("Включить Glyph", style = MaterialTheme.typography.titleMedium)
-                    Text("Общий переключатель для каналов A, B и C", style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+    Scaffold(topBar = { AppTopBar("Glyph", "Сигналы на задней панели") }) { padding ->
+        ScreenColumn(padding) {
+            if (!supported) {
+                SectionCard {
+                    Text("Нужен Nothing Phone", style = MaterialTheme.typography.titleMedium)
+                    SupportingText("Подсветка поддерживается на Phone (2a) и (2a) Plus. Лимиты и виджет работают на других телефонах.")
                 }
-                Switch(checked = state.glyphEnabled, onCheckedChange = onToggleGlyph, enabled = !busy)
+                return@ScreenColumn
             }
-            if (!message.isNullOrBlank()) {
-                Spacer(Modifier.height(12.dp))
-                Card(modifier = Modifier.fillMaxWidth()) {
-                    Column(Modifier.padding(12.dp)) {
-                        Text(message, style = MaterialTheme.typography.bodyMedium)
-                        TextButton(onClick = onDismissMessage) { Text("Скрыть") }
+            SectionCard {
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Подсветка Glyph", style = MaterialTheme.typography.titleMedium)
+                        SupportingText(if (state.glyphEnabled) "Включена · каналы A, B и C" else "Выключена")
+                    }
+                    Switch(state.glyphEnabled, onCheckedChange = onToggleGlyph, enabled = !busy)
+                }
+            }
+            BusyLine(busy)
+            if (!message.isNullOrBlank()) MessageCard(message, onDismiss = onDismissMessage)
+            if (state.glyphEnabled) {
+                StripCard(state, busy, onSelectStripMode)
+                AmbientChannel.entries.forEach { channel ->
+                    ChannelCard(channel, state.ambient.modeFor(channel), !busy,
+                        onSelect = { onSelectChannelMode(channel, it) }, onTest = { onTestChannel(channel) })
+                }
+                if (state.ambient.idleEnabled) {
+                    SectionCard {
+                        Text("Телефон отдыхает", style = MaterialTheme.typography.titleMedium)
+                        SupportingText("Загорается после выбранного времени с выключения экрана.")
+                        ChoiceChips(AmbientSettings.ALLOWED_IDLE_MINUTES.toList(), state.ambient.idleThresholdMinutes,
+                            !busy, label = { "$it мин" }, onSelect = onSelectIdleMinutes)
+                        SupportingText("Заблокируйте экран и положите телефон экраном вниз. Свет постепенно станет ярче. Включение экрана сбрасывает отсчёт.")
+                        IdleAlarmNotice()
                     }
                 }
+                if (state.ambient.rainEnabled) WeatherCard(state.ambient, state.rainForecast, busy,
+                    onAddPlace, onSelectPlace, onRemovePlace)
             }
-            if (state.glyphEnabled) {
-                Spacer(Modifier.height(20.dp))
-                HorizontalDivider()
-                Spacer(Modifier.height(16.dp))
-                GlyphSetting(state = state, busy = busy, onSelectMode = onSelectGlyphMode, onSelectStripMode = onSelectStripMode)
-                Spacer(Modifier.height(20.dp))
-                HorizontalDivider()
-                Spacer(Modifier.height(16.dp))
-                AmbientSetting(
-                    settings = state.ambient, busy = busy,
-                    onSelectChannelMode = onSelectChannelMode, onTestChannel = onTestChannel,
-                    onSelectIdleMinutes = onSelectIdleMinutes,
-                )
-                if (state.ambient.rainEnabled) {
-                    Spacer(Modifier.height(20.dp))
-                    HorizontalDivider()
-                    Spacer(Modifier.height(16.dp))
-                    WeatherSetting(settings = state.ambient, forecast = state.rainForecast, busy = busy,
-                        onAddPlace = onAddPlace, onSelectPlace = onSelectPlace, onRemovePlace = onRemovePlace)
-                }
-            }
-            Spacer(Modifier.height(24.dp))
-            Card(modifier = Modifier.fillMaxWidth()) {
-                Column(Modifier.padding(12.dp)) {
-                    Text("Если подсветка не включается", style = MaterialTheme.typography.titleSmall)
-                    Spacer(Modifier.height(8.dp))
-                    Text(
-                        "Для этой сборки нужно разрешить отладку Glyph с компьютера. Разрешение действует 48 часов:",
-                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                    Spacer(Modifier.height(8.dp))
-                    Text("adb shell settings put global nt_glyph_interface_debug_enable 1",
-                        style = MaterialTheme.typography.bodySmall,
-                        fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace)
-                    Spacer(Modifier.height(8.dp))
-                    Text("Во время работы Glyph в шторке есть уведомление службы. Если система откажет в доступе, причина появится в нём.",
-                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-            }
-        }
-    }
-}
-
-/** Независимый выбор функции A и B; настройки одинаковых функций общие. */
-@Composable
-private fun AmbientSetting(
-    settings: AmbientSettings,
-    busy: Boolean,
-    onSelectChannelMode: (AmbientChannel, GlyphChannelMode) -> Unit,
-    onTestChannel: (AmbientChannel) -> Unit,
-    onSelectIdleMinutes: (Int) -> Unit,
-) {
-    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        Text("Каналы A и B", style = MaterialTheme.typography.titleMedium)
-        Text("Выберите функцию для каждого канала. Город и время ожидания общие, если функция выбрана на обоих.",
-            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        AmbientChannel.entries.forEach { channel ->
-            ChannelModePicker(
-                channel = channel, selected = settings.modeFor(channel), enabled = !busy,
-                onSelect = { onSelectChannelMode(channel, it) }, onTest = { onTestChannel(channel) },
-            )
-        }
-        if (settings.idleEnabled) {
-            HorizontalDivider()
-            Text("Время с выключения экрана", style = MaterialTheme.typography.titleMedium)
-            Text("Заблокируйте экран и оставьте телефон экраном вниз. После выбранного времени подсветка " +
-                "начнёт светиться слабо и постепенно станет ярче. Включение экрана сбрасывает отсчёт; движения не учитываются.",
-                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            IdleAlarmNotice()
-            Text("Загорается через", style = MaterialTheme.typography.bodyMedium)
-            AmbientSettings.ALLOWED_IDLE_MINUTES.forEach { minutes ->
-                Row(modifier = Modifier.fillMaxWidth().clickable(enabled = !busy) { onSelectIdleMinutes(minutes) },
-                    verticalAlignment = Alignment.CenterVertically) {
-                    RadioButton(selected = minutes == settings.idleThresholdMinutes,
-                        onClick = { onSelectIdleMinutes(minutes) }, enabled = !busy)
-                    Text("$minutes мин", modifier = Modifier.padding(start = 8.dp))
-                }
-            }
-        }
-    }
-}
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun ChannelModePicker(
-    channel: AmbientChannel,
-    selected: GlyphChannelMode,
-    enabled: Boolean,
-    onSelect: (GlyphChannelMode) -> Unit,
-    onTest: () -> Unit,
-) {
-    Card(modifier = Modifier.fillMaxWidth()) {
-        Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text("Канал $channel", style = MaterialTheme.typography.titleMedium)
-            SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
-                GlyphChannelMode.entries.forEachIndexed { index, mode ->
-                    SegmentedButton(
-                        selected = selected == mode, onClick = { onSelect(mode) }, enabled = enabled,
-                        shape = SegmentedButtonDefaults.itemShape(index, GlyphChannelMode.entries.size),
-                        label = { Text(mode.label) }, icon = {},
-                    )
-                }
-            }
-            val description = when (selected) {
-                GlyphChannelMode.OFF -> "Обычная подсветка этого канала выключена."
-                GlyphChannelMode.RAIN -> "Вероятность дождя для выбранного города."
-                GlyphChannelMode.IDLE -> "Сколько времени экран остаётся выключенным."
-            }
-            Text(description, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            OutlinedButton(onClick = onTest, enabled = enabled) { Text("Проверить $channel · 5 секунд") }
-            Text("Проверка включает полную яркость и возвращает обычную индикацию. Экран можно оставить включённым.",
-                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        }
-    }
-}
-
-@Composable
-private fun WeatherSetting(
-    settings: AmbientSettings,
-    forecast: RainForecast?,
-    busy: Boolean,
-    onAddPlace: (String) -> Unit,
-    onSelectPlace: (WeatherPlace) -> Unit,
-    onRemovePlace: (WeatherPlace) -> Unit,
-) {
-    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        Text("Города и прогноз осадков", style = MaterialTheme.typography.titleMedium)
-        Text("Используется самая высокая почасовая вероятность осадков на ближайшие три часа. " +
-            "Выбранный город общий для всех каналов, которым назначена погода.",
-            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        if (settings.channelA == GlyphChannelMode.RAIN || settings.channelB == GlyphChannelMode.RAIN) {
-            Text("Для коротких A/B вероятность задаёт яркость; ниже 30% они погашены. " +
-                "В режиме «Осадки» C показывает процент длиной заполнения.",
-                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        }
-        PlacePicker(places = settings.places, selected = settings.place, busy = busy,
-            onAddPlace = onAddPlace, onSelectPlace = onSelectPlace, onRemovePlace = onRemovePlace)
-        if (forecast != null) {
-            Text("${settings.place?.name}: ${forecast.probabilityPercent}% · " + UsageFormat.updatedAt(forecast.fetchedAtMillis),
-                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        } else if (settings.place != null) {
-            Text("Прогноз для ${settings.place.name} ещё не загружен.",
-                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        }
-        Text("Прогноз выбранного города обновляется в фоне, не чаще раза в полчаса. Доступ к геолокации и регистрация не нужны.",
-            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-    }
-}
-
-/** Сохранённые города переключаются без повторного поиска координат. */
-@Composable
-private fun PlacePicker(
-    places: List<WeatherPlace>,
-    selected: WeatherPlace?,
-    busy: Boolean,
-    onAddPlace: (String) -> Unit,
-    onSelectPlace: (WeatherPlace) -> Unit,
-    onRemovePlace: (WeatherPlace) -> Unit,
-) {
-    var query by rememberSaveable { mutableStateOf("") }
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text("Сохранённые города", style = MaterialTheme.typography.titleSmall)
-        Text("Нажмите на город, чтобы переключить прогноз. Новый город сразу становится выбранным.",
-            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        if (places.isEmpty()) {
-            Text("Добавьте город — пока индикация осадков погашена.",
-                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        }
-        places.forEach { place ->
-            val isSelected = place.id == selected?.id
-            Card(modifier = Modifier.fillMaxWidth()) {
-                Row(modifier = Modifier.fillMaxWidth().padding(end = 8.dp),
-                    verticalAlignment = Alignment.CenterVertically) {
-                    Row(modifier = Modifier.weight(1f)
-                        .selectable(selected = isSelected, enabled = !busy, role = Role.RadioButton,
-                            onClick = { onSelectPlace(place) })
-                        .padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                        RadioButton(selected = isSelected, onClick = null, enabled = !busy)
-                        Column(modifier = Modifier.weight(1f).padding(start = 8.dp)) {
-                            Text(place.name, style = MaterialTheme.typography.bodyLarge)
-                            if (isSelected) {
-                                Text("Выбран для прогноза", style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.primary)
-                            }
-                            if (places.count { it.name == place.name } > 1) {
-                                Text("%.3f, %.3f".format(place.latitude, place.longitude),
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            }
+            ExpandableSection("Настройка и помощь") {
+                if (state.glyphEnabled && state.ambient.stripMode != GlyphStripMode.OFF) {
+                    Text("Направление полосы C", style = MaterialTheme.typography.titleSmall)
+                    GlyphRenderMode.entries.forEach { mode ->
+                        Row(Modifier.fillMaxWidth().selectable(selected = mode == state.glyphRenderMode,
+                            enabled = !busy, role = Role.RadioButton, onClick = { onSelectGlyphMode(mode) })
+                            .padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                            RadioButton(mode == state.glyphRenderMode, onClick = null, enabled = !busy)
+                            Text(mode.label, modifier = Modifier.weight(1f).padding(start = 8.dp), style = MaterialTheme.typography.bodyMedium)
                         }
                     }
-                    TextButton(onClick = { onRemovePlace(place) }, enabled = !busy) { Text("Удалить") }
+                    HorizontalDivider()
                 }
+                Text("Если подсветка не включается", style = MaterialTheme.typography.titleSmall)
+                SupportingText("Разрешите отладку Glyph с компьютера. Разрешение действует 48 часов:")
+                Text("adb shell settings put global nt_glyph_interface_debug_enable 1",
+                    style = MaterialTheme.typography.bodySmall, fontFamily = FontFamily.Monospace)
+                SupportingText("Причина отказа в доступе появляется в постоянном уведомлении tinyGlyph.")
+                SupportingText("Проверка A и B включает полную яркость на 5 секунд. Экран можно оставить включённым; затем возвращается выбранная индикация.")
             }
-        }
-        Spacer(modifier = Modifier.height(4.dp))
-        OutlinedTextField(value = query, onValueChange = { query = it },
-            label = { Text("Добавить город") }, singleLine = true, enabled = !busy,
-            modifier = Modifier.fillMaxWidth())
-        OutlinedButton(onClick = { onAddPlace(query); query = "" }, enabled = !busy && query.isNotBlank()) {
-            Text("Добавить")
         }
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun GlyphSetting(
-    state: UsageState,
-    busy: Boolean,
-    onSelectMode: (GlyphRenderMode) -> Unit,
-    onSelectStripMode: (GlyphStripMode) -> Unit,
-) {
-    val stripMode = state.ambient.stripMode
+private fun ChannelHeading(channel: String, title: String) {
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        Box(Modifier.size(36.dp).background(MaterialTheme.colorScheme.surfaceContainerHighest, RoundedCornerShape(12.dp)),
+            contentAlignment = Alignment.Center) { Text(channel, style = MaterialTheme.typography.titleMedium) }
+        Text(title, style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
+    }
+}
+
+@Composable
+private fun ChannelCard(channel: AmbientChannel, selected: GlyphChannelMode, enabled: Boolean,
+    onSelect: (GlyphChannelMode) -> Unit, onTest: () -> Unit) {
+    SectionCard {
+        ChannelHeading(channel.name, "Короткий свет")
+        ChoiceChips(GlyphChannelMode.entries, selected, enabled, label = { it.label }, onSelect = onSelect)
+        SupportingText(when (selected) {
+            GlyphChannelMode.OFF -> "Этот канал погашен."
+            GlyphChannelMode.RAIN -> "Яркость показывает вероятность осадков. Ниже 30% свет погашен."
+            GlyphChannelMode.IDLE -> "Свет показывает время с выключения экрана."
+        })
+        OutlinedButton(onClick = onTest, enabled = enabled, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
+            Text("Проверить $channel · 5 секунд")
+        }
+    }
+}
+
+@Composable
+private fun StripCard(state: UsageState, busy: Boolean, onSelect: (GlyphStripMode) -> Unit) {
+    val mode = state.ambient.stripMode
     val percent = state.ambient.stripPercent(state.snapshot?.fiveHour?.utilization, state.rainForecast?.probabilityPercent)
-    Column {
-        Card(modifier = Modifier.fillMaxWidth()) {
-            Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("Канал C · полоса", style = MaterialTheme.typography.titleMedium)
-                SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
-                    GlyphStripMode.entries.forEachIndexed { index, option ->
-                        SegmentedButton(selected = stripMode == option, onClick = { onSelectStripMode(option) }, enabled = !busy,
-                            shape = SegmentedButtonDefaults.itemShape(index, GlyphStripMode.entries.size),
-                            label = { Text(option.label) }, icon = {})
+    SectionCard {
+        ChannelHeading("C", "Полоса прогресса")
+        ChoiceChips(GlyphStripMode.entries, mode, !busy, label = { it.label }, onSelect = onSelect)
+        SupportingText(when (mode) {
+            GlyphStripMode.USAGE -> "Расход 5-часового окна ${state.provider.displayLabel()}"
+            GlyphStripMode.RAIN -> state.ambient.place?.name ?: "Добавьте город в блоке погоды ниже."
+            GlyphStripMode.OFF -> "Полоса погашена."
+        })
+        if (mode != GlyphStripMode.OFF && percent != null) {
+            Text("$percent%", style = MaterialTheme.typography.headlineMedium, color = MaterialTheme.colorScheme.primary)
+            LinearProgressIndicator(progress = { percent / 100f }, modifier = Modifier.fillMaxWidth().height(8.dp),
+                trackColor = MaterialTheme.colorScheme.surfaceContainerHighest)
+            SupportingText("Заполнение полосы соответствует проценту.")
+        } else if (mode != GlyphStripMode.OFF && (mode != GlyphStripMode.RAIN || state.ambient.place != null)) {
+            SupportingText(if (mode == GlyphStripMode.USAGE) "Данные о лимите ещё не загружены." else "Прогноз ещё не загружен.")
+        }
+    }
+}
+
+@Composable
+private fun WeatherCard(settings: AmbientSettings, forecast: RainForecast?, busy: Boolean,
+    onAddPlace: (String) -> Unit, onSelectPlace: (WeatherPlace) -> Unit, onRemovePlace: (WeatherPlace) -> Unit) {
+    var query by rememberSaveable { mutableStateOf("") }
+    var submitted by rememberSaveable { mutableStateOf<String?>(null) }
+    val focus = LocalFocusManager.current
+    // Retain the query after a failed lookup; clear it only when a city was added.
+    LaunchedEffect(settings.place?.id, busy) {
+        if (!busy && submitted != null && (settings.place?.id ?: "") != submitted) {
+            query = ""
+            submitted = null
+        }
+    }
+    val add = {
+        if (!busy && query.isNotBlank()) {
+            submitted = settings.place?.id ?: ""
+            onAddPlace(query.trim())
+            focus.clearFocus()
+        }
+    }
+    SectionCard {
+        Text("Погода и города", style = MaterialTheme.typography.titleMedium)
+        if (forecast != null && settings.place != null) {
+            Text("${forecast.probabilityPercent}%", style = MaterialTheme.typography.displaySmall)
+            Text(settings.place.name, style = MaterialTheme.typography.titleSmall)
+            SupportingText("Вероятность осадков в ближайшие 3 часа · " + UsageFormat.updatedAt(forecast.fetchedAtMillis))
+        } else SupportingText(if (settings.place == null) "Добавьте город, чтобы включить прогноз осадков." else "Прогноз для ${settings.place.name} ещё не загружен.")
+        settings.places.forEach { place ->
+            val chosen = settings.place?.id == place.id
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Row(Modifier.weight(1f).selectable(selected = chosen, enabled = !busy, role = Role.RadioButton,
+                    onClick = { onSelectPlace(place) }).padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                    RadioButton(chosen, onClick = null, enabled = !busy)
+                    Column(Modifier.weight(1f).padding(start = 10.dp)) {
+                        Text(place.name, style = MaterialTheme.typography.bodyMedium)
+                        if (chosen) SupportingText("Выбран для всех погодных каналов")
+                        if (settings.places.count { it.name == place.name } > 1)
+                            SupportingText("%.3f, %.3f".format(place.latitude, place.longitude))
                     }
                 }
-                Text(when (stripMode) {
-                    GlyphStripMode.USAGE -> "Расход 5-часового окна " + state.provider.displayLabel() + "."
-                    GlyphStripMode.RAIN -> "Вероятность осадков: 70% — заполнено 70% полосы. 0% — пустая, 100% — вся полоса."
-                    GlyphStripMode.OFF -> "Полоса C погашена."
-                }, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                if (percent != null) {
-                    Text(if (stripMode == GlyphStripMode.RAIN) "${state.ambient.place?.name} · $percent%" else "Сейчас: $percent%",
-                        style = MaterialTheme.typography.titleLarge, color = MaterialTheme.colorScheme.primary)
-                } else if (stripMode != GlyphStripMode.OFF) {
-                    Text(when {
-                        stripMode == GlyphStripMode.USAGE -> "Нет данных о лимите."
-                        state.ambient.place == null -> "Выберите город в блоке прогноза ниже."
-                        else -> "Прогноз ещё не загружен."
-                    }, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                IconButton(onClick = { onRemovePlace(place) }, enabled = !busy) {
+                    Icon(painterResource(R.drawable.ic_close), contentDescription = "Удалить ${place.name}", modifier = Modifier.size(20.dp))
                 }
             }
         }
-        if (stripMode != GlyphStripMode.OFF) {
-            Spacer(modifier = Modifier.height(12.dp))
-            Text(text = "Отрисовка полосы", style = MaterialTheme.typography.titleSmall)
-            Text(text = "Если заполнение идёт не с той стороны или выглядит неправильно, переключите вариант.",
-                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            GlyphRenderMode.entries.forEach { option ->
-                Row(modifier = Modifier.fillMaxWidth().clickable(enabled = !busy) { onSelectMode(option) }.padding(vertical = 6.dp),
-                    verticalAlignment = Alignment.CenterVertically) {
-                    RadioButton(selected = option == state.glyphRenderMode, onClick = { onSelectMode(option) }, enabled = !busy)
-                    Text(option.label, modifier = Modifier.padding(start = 8.dp), style = MaterialTheme.typography.bodyLarge)
-                }
-            }
+        OutlinedTextField(query, onValueChange = { query = it }, label = { Text("Добавить город") },
+            singleLine = true, enabled = !busy, modifier = Modifier.fillMaxWidth(),
+            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done), keyboardActions = KeyboardActions(onDone = { add() }))
+        OutlinedButton(onClick = add, enabled = !busy && query.isNotBlank(), modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
+            Text("Добавить город")
         }
+        SupportingText("Выбранный город общий для A, B и C. Прогноз обновляется раз в полчаса; геолокация не нужна.")
     }
 }
 
@@ -336,23 +212,11 @@ private fun GlyphSetting(
 private fun IdleAlarmNotice() {
     if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) return
     val context = LocalContext.current
-    var exactAllowed by remember { mutableStateOf(UsageForegroundService.canScheduleExact(context)) }
-    LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
-        exactAllowed = UsageForegroundService.canScheduleExact(context)
-    }
-    if (exactAllowed) return
-    Spacer(Modifier.height(12.dp))
-    Card(modifier = Modifier.fillMaxWidth()) {
-        Column(Modifier.padding(12.dp)) {
-            Text("Срабатывание таймера во время сна", style = MaterialTheme.typography.titleSmall)
-            Spacer(Modifier.height(4.dp))
-            Text("Разрешите точные будильники, чтобы подсветка загоралась ближе к выбранному времени. " +
-                "Без разрешения Android может отложить подсветку.",
-                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            OutlinedButton(onClick = {
-                context.startActivity(Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM)
-                    .setData(Uri.parse("package:" + context.packageName)))
-            }) { Text("Разрешить будильники") }
-        }
-    }
+    var allowed by remember { mutableStateOf(UsageForegroundService.canScheduleExact(context)) }
+    LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { allowed = UsageForegroundService.canScheduleExact(context) }
+    if (allowed) return
+    HorizontalDivider()
+    SupportingText("Разрешите точные будильники, чтобы Android не задерживал включение подсветки во время сна.")
+    OutlinedButton(onClick = { context.startActivity(Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM)
+        .setData(Uri.parse("package:" + context.packageName))) }, modifier = Modifier.fillMaxWidth()) { Text("Разрешить будильники") }
 }

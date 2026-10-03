@@ -6,6 +6,8 @@ import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
 import androidx.activity.compose.BackHandler
+import androidx.activity.enableEdgeToEdge
+import androidx.activity.SystemBarStyle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
@@ -51,6 +53,10 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        enableEdgeToEdge(
+            statusBarStyle = SystemBarStyle.dark(android.graphics.Color.TRANSPARENT),
+            navigationBarStyle = SystemBarStyle.dark(android.graphics.Color.TRANSPARENT),
+        )
         if (savedInstanceState == null) selectRequestedProvider(intent)
         followGlyphSetting()
         setContent {
@@ -114,7 +120,7 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-private enum class Screen(val label: String, val icon: Int) {
+internal enum class Screen(val label: String, val icon: Int) {
     MAIN("Лимиты", R.drawable.ic_limits),
     GLYPH("Glyph", R.drawable.ic_glyph),
     SETTINGS("Настройки", R.drawable.ic_settings),
@@ -140,21 +146,7 @@ private fun AppRoot(onOpenLogin: () -> Unit, onOpenManualLogin: () -> Unit) {
             Scaffold(
                 contentWindowInsets = WindowInsets(0, 0, 0, 0),
                 bottomBar = {
-                    NavigationBar(containerColor = MaterialTheme.colorScheme.surface) {
-                        Screen.entries.forEach { tab ->
-                            NavigationBarItem(
-                                selected = screen == tab,
-                                onClick = { screen = tab },
-                                icon = { Icon(painterResource(tab.icon), contentDescription = null) },
-                                label = { Text(tab.label) },
-                                colors = NavigationBarItemDefaults.colors(
-                                    selectedIconColor = MaterialTheme.colorScheme.primary,
-                                    selectedTextColor = MaterialTheme.colorScheme.primary,
-                                    indicatorColor = MaterialTheme.colorScheme.primaryContainer,
-                                ),
-                            )
-                        }
-                    }
+                    AppNavigation(screen) { screen = it }
                 },
             ) { innerPadding ->
                 Box(modifier = Modifier.fillMaxSize().padding(innerPadding).consumeWindowInsets(innerPadding)) {
@@ -190,6 +182,25 @@ private fun AppRoot(onOpenLogin: () -> Unit, onOpenManualLogin: () -> Unit) {
                     }
                 }
             }
+        }
+    }
+}
+
+@Composable
+internal fun AppNavigation(selected: Screen, onSelect: (Screen) -> Unit) {
+    NavigationBar(containerColor = MaterialTheme.colorScheme.surface) {
+        Screen.entries.forEach { tab ->
+            NavigationBarItem(
+                selected = selected == tab,
+                onClick = { onSelect(tab) },
+                icon = { Icon(painterResource(tab.icon), contentDescription = null) },
+                label = { Text(tab.label) },
+                colors = NavigationBarItemDefaults.colors(
+                    selectedIconColor = MaterialTheme.colorScheme.primary,
+                    selectedTextColor = MaterialTheme.colorScheme.primary,
+                    indicatorColor = MaterialTheme.colorScheme.primaryContainer,
+                ),
+            )
         }
     }
 }

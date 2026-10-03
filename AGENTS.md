@@ -6,3 +6,5 @@
 - Preserve the app's interface language unless a UI translation is requested.
 - Keep the user's Git author identity. Add `Co-authored-by: Codex <codex@openai.com>` to commits created with Codex assistance.
 - Attach only the installable APK to GitHub releases unless the user explicitly requests additional downloads. Keep logo files and other design assets in the repository.
+
+- Publish signed release APKs through the version-tag GitHub Actions workflow. Update the app version and add English user-facing notes under `release-notes/` before tagging. Preserve the existing signing identity.

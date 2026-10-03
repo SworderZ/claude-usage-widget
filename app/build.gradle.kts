@@ -7,6 +7,13 @@ plugins {
     alias(libs.plugins.kotlin.serialization)
 }
 
+val releaseSigningNames = listOf("ANDROID_KEYSTORE_PATH", "ANDROID_KEYSTORE_PASSWORD", "ANDROID_KEY_ALIAS", "ANDROID_KEY_PASSWORD")
+val releaseSigningValues = releaseSigningNames.associateWith { System.getenv(it)?.takeIf(String::isNotBlank) }
+val hasReleaseSigning = releaseSigningValues.values.any { it != null }
+require(!hasReleaseSigning || releaseSigningValues.values.all { it != null }) {
+    "Release signing requires all four ANDROID_KEYSTORE_PATH/PASSWORD and ANDROID_KEY_ALIAS/PASSWORD variables."
+}
+
 android {
     namespace = "space.megaworld.claudeusage"
     compileSdk = 35
@@ -15,15 +22,25 @@ android {
         applicationId = "space.megaworld.claudeusage"
         minSdk = 26
         targetSdk = 35
-        versionCode = 22
-        versionName = "0.13.0"
+        versionCode = 23
+        versionName = "0.14.0"
+    }
+
+    signingConfigs {
+        if (hasReleaseSigning) create("release") {
+            storeFile = file(releaseSigningValues.getValue("ANDROID_KEYSTORE_PATH")!!)
+            storePassword = releaseSigningValues.getValue("ANDROID_KEYSTORE_PASSWORD")
+            keyAlias = releaseSigningValues.getValue("ANDROID_KEY_ALIAS")
+            keyPassword = releaseSigningValues.getValue("ANDROID_KEY_PASSWORD")
+        }
     }
 
     buildTypes {
         release {
-            // R8 выключен намеренно: Glance/WorkManager/Tink требуют отдельного набора
-            // правил, а релизная сборка тут не выпускается — только assembleDebug.
-            isMinifyEnabled = false
+            isDebuggable = false
+            isMinifyEnabled = true
+            isShrinkResources = true
+            if (hasReleaseSigning) signingConfig = signingConfigs.getByName("release")
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro",
