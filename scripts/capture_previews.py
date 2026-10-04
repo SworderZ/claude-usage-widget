@@ -53,7 +53,8 @@ def tap_node(predicate, index=0):
             break
         sizes = re.findall(r"(\d+)x(\d+)", adb("shell", "wm", "size").decode())
         width, height = map(int, sizes[-1])
-        adb("shell", "input", "swipe", str(width // 2), str(height - 250), str(width // 2), "450", "450")
+        # Start above the bottom navigation bar, including its larger-text height.
+        adb("shell", "input", "swipe", str(width // 2), str(height - 420), str(width // 2), "450", "450")
     else:
         raise RuntimeError("Widget configuration control is missing after scrolling")
     x1, y1, x2, y2 = map(int, re.findall(r"\d+", nodes[index].attrib["bounds"]))
