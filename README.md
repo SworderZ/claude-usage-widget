@@ -38,12 +38,15 @@ name to open that account.
 
 ### Connect Codex
 
-Choose GPT on the Limits tab and import `.codex/auth.json` from a computer where
-Codex is signed in. The app stores the access token and account ID in encrypted
-storage. When that token expires, import a fresh file.
+Choose GPT on the Limits tab and select **Sign in with ChatGPT**. Enable device-code
+login in ChatGPT's Security settings, copy the one-time code, and open the browser
+to confirm it. Return to tinyGlyph after approving the sign-in. No computer is
+needed. The phone keeps its own encrypted session and refreshes it automatically.
 
-The file contains account secrets. Delete the transferred copy after import and
-keep it out of repositories and messages.
+The **Other sign-in method** section still accepts `.codex/auth.json` from a signed-in
+computer. This fallback imports only the access token; it never rotates the
+computer's refresh token. Import a fresh file when that token expires. Delete the
+transferred copy after import and keep it out of repositories and messages.
 
 **The GPT option shows Codex usage limits.** A remaining-message counter for ordinary
 ChatGPT conversations is not available in this app.
@@ -92,7 +95,8 @@ indication while the phone sleeps.
 
 Choose Usage, Rain, or Off. In Usage mode, the strip shows five-hour usage for the
 provider selected on the Limits tab. In Rain mode, a 70% probability fills roughly
-70% of the strip, including values below the short channels' 30% threshold.
+70% of the strip. Channels A and B glow faintly at 1–49%, brighter at 50–69%, and
+fully at 70–100%. A zero probability or missing forecast keeps them dark.
 
 The rendering options let you reverse the fill direction or use individual
 segments if the default progress display looks wrong on your phone.

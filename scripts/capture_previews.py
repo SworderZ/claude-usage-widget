@@ -122,10 +122,26 @@ def main():
         elif os.environ.get("PREVIEW_SCOPE") == "widgets":
             cases = []
             capture_widget_configuration(prefix)
+        elif os.environ.get("PREVIEW_SCOPE") == "auth":
+            cases = [("LOGIN_GPT", "GPT", "data"), ("LOGIN_GPT", "GPT", "pending"), ("LOGIN_GPT", "GPT", "error")]
         for screen, provider, scenario in cases:
             open_page(screen, provider, scenario)
             name = f"{prefix}-{screen.lower()}-{provider.lower()}-{scenario}"
             xml = capture(name)
+            if screen == "LOGIN_GPT" and os.environ.get("PREVIEW_SCOPE") == "auth":
+                text = lambda value: lambda n: n.get("text") == value
+                if scenario == "pending":
+                    tap_node(text("Скопировать код"))
+                    if not any(n.get("text") == "Код скопирован" for n in ui_nodes()):
+                        raise RuntimeError("Device-code copy confirmation is missing")
+                    capture(f"{name}-copied")
+                    tap_node(text("Отменить вход"))
+                    tap_node(text("Войти через ChatGPT"))
+                    if not any(n.get("text") == "ABCD-1234" for n in ui_nodes()):
+                        raise RuntimeError("Device-code sign-in cannot restart after cancellation")
+                for index in range(1, 3):
+                    adb("shell", "input", "swipe", str(width // 2), str(height - 420), str(width // 2), "450", "450")
+                    capture(f"{name}-scroll-{index}")
             if screen in ["GLYPH", "SETTINGS", "LOGIN_MANUAL"]:
                 for index in range(1, (9 if font == "1.5" else 5) if screen == "GLYPH" else 3):
                     adb("shell", "input", "swipe", str(width // 2), str(height - 420), str(width // 2), "450", "450")
@@ -148,7 +164,7 @@ def main():
                 adb("shell", "input", "tap", str((x1 + x2) // 2), str((y1 + y2) // 2))
                 capture(f"{name}-keyboard")
                 adb("shell", "input", "keyevent", "4")
-        for widget_height in ([] if os.environ.get("PREVIEW_SCOPE") == "glyph" else [60, 130, 170, 230, 260]):
+        for widget_height in ([] if os.environ.get("PREVIEW_SCOPE") in ("glyph", "auth") else [60, 130, 170, 230, 260]):
             for provider in (["GPT"] if os.environ.get("PREVIEW_SCOPE") == "layout-fixes" else ["CLAUDE", "GPT"]):
                 open_page("WIDGET", provider, width=280, height=widget_height)
                 capture(f"{prefix}-widget-{provider.lower()}-{widget_height}")

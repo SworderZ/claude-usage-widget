@@ -1,121 +1,135 @@
 package space.megaworld.claudeusage.ui
 
+import android.content.ActivityNotFoundException
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Intent
+import android.net.Uri
 import android.os.Bundle
-import androidx.activity.enableEdgeToEdge
-import androidx.activity.SystemBarStyle
 import androidx.activity.ComponentActivity
+import androidx.activity.SystemBarStyle
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
+import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import androidx.lifecycle.lifecycleScope
-import androidx.glance.appwidget.updateAll
-import kotlinx.coroutines.*
-import space.megaworld.claudeusage.AppGraph
-import space.megaworld.claudeusage.data.RefreshResult
-import space.megaworld.claudeusage.data.OpenAiImportException
-import space.megaworld.claudeusage.data.OpenAiUsageClient
-import space.megaworld.claudeusage.widget.UsageWidget
-import space.megaworld.claudeusage.worker.UsageRefreshWorker
+import androidx.lifecycle.ViewModelProvider
+import kotlinx.coroutines.delay
+import space.megaworld.claudeusage.data.DeviceAuthorization
+import space.megaworld.claudeusage.data.OPENAI_DEVICE_URL
+import space.megaworld.claudeusage.data.UsageProvider
 
 class OpenAiLoginActivity : ComponentActivity() {
-    private var busy by mutableStateOf(false)
-    private var error by mutableStateOf<String?>(null)
-    private var networkStatus by mutableStateOf<String?>(null)
+    private val model by lazy { ViewModelProvider(this)[OpenAiLoginViewModel::class.java] }
     private val pickFile = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-        if (uri == null) return@registerForActivityResult
-        busy = true
-        error = null
-        lifecycleScope.launch {
-            try {
-                val raw = withContext(Dispatchers.IO) {
-                    contentResolver.openInputStream(uri)?.use { stream ->
-                        val bytes = stream.readBytesLimited()
-                        bytes.toString(Charsets.UTF_8)
-                    } ?: throw IllegalArgumentException("Файл не прочитан")
-                }
-                val graph = AppGraph.get(this@OpenAiLoginActivity)
-                when (val result = graph.usageRepository.importOpenAi(raw)) {
-                    is RefreshResult.Success -> {
-                        UsageRefreshWorker.ensureScheduled(this@OpenAiLoginActivity, graph.settingsStore.currentIntervalMinutes())
-                        UsageWidget().updateAll(this@OpenAiLoginActivity)
-                        finish()
-                    }
-                    RefreshResult.NotAuthorized, RefreshResult.SessionExpired -> error = "OpenAI отклонил токен (401 или явная ошибка токена). Импортируйте свежий auth.json после входа Codex."
-                    is RefreshResult.Failure -> error = result.message
-                }
-            } catch (e: CancellationException) { throw e
-            } catch (e: OpenAiImportException) { error = e.message
-            } catch (e: Exception) { error = "Не удалось подключить аккаунт. Нужен JSON-файл с access_token из Codex."
-            } finally { busy = false }
-        }
+        if (uri != null) model.importFile(uri)
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        enableEdgeToEdge(
-            statusBarStyle = SystemBarStyle.dark(android.graphics.Color.TRANSPARENT),
-            navigationBarStyle = SystemBarStyle.dark(android.graphics.Color.TRANSPARENT),
-        )
+        enableEdgeToEdge(SystemBarStyle.dark(android.graphics.Color.TRANSPARENT),
+            SystemBarStyle.dark(android.graphics.Color.TRANSPARENT))
         setContent {
-            ClaudeUsageTheme(provider = space.megaworld.claudeusage.data.UsageProvider.CODEX) {
-                OpenAiLoginContent(busy, error, networkStatus,
+            ClaudeUsageTheme(UsageProvider.CODEX) {
+                LaunchedEffect(model.connected) { if (model.connected) finish() }
+                BackHandler { model.cancelLogin(); finish() }
+                OpenAiLoginContent(
+                    busy = model.busy, error = model.error, networkStatus = model.networkStatus,
                     onPickFile = { pickFile.launch(arrayOf("application/json", "text/plain", "application/octet-stream")) },
-                    onCheckNetwork = {
-                        busy = true
-                        lifecycleScope.launch {
-                            try { networkStatus = OpenAiUsageClient().checkConnectivity() }
-                            finally { busy = false }
-                        }
-                    }, onBack = { finish() })
+                    onCheckNetwork = model::checkNetwork,
+                    onBack = { model.cancelLogin(); finish() },
+                    authorization = model.authorization, onStartLogin = model::startLogin,
+                    onCancelLogin = model::cancelLogin,
+                    onOpenBrowser = {
+                        try { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(OPENAI_DEVICE_URL))) }
+                        catch (e: ActivityNotFoundException) { model.browserUnavailable() }
+                    },
+                    onCopyCode = { code ->
+                        getSystemService(ClipboardManager::class.java).setPrimaryClip(ClipData.newPlainText("Код входа ChatGPT", code))
+                    },
+                )
             }
         }
     }
-}
-
-private fun java.io.InputStream.readBytesLimited(): ByteArray {
-    val out = java.io.ByteArrayOutputStream()
-    val buffer = ByteArray(4096)
-    while (true) {
-        val count = read(buffer)
-        if (count < 0) break
-        require(out.size() + count <= 128 * 1024) { "Файл слишком большой" }
-        out.write(buffer, 0, count)
-    }
-    return out.toByteArray()
 }
 
 @Composable
-internal fun OpenAiLoginContent(busy: Boolean, error: String?, networkStatus: String?,
-    onPickFile: () -> Unit, onCheckNetwork: () -> Unit, onBack: () -> Unit) {
-    Scaffold(topBar = { AppTopBar("Подключить Codex", "Лимиты вашей подписки GPT", onBack) }) { padding ->
+internal fun OpenAiLoginContent(
+    busy: Boolean, error: String?, networkStatus: String?,
+    onPickFile: () -> Unit, onCheckNetwork: () -> Unit, onBack: () -> Unit,
+    authorization: DeviceAuthorization? = null, onStartLogin: () -> Unit = {},
+    onCancelLogin: () -> Unit = {}, onOpenBrowser: () -> Unit = {}, onCopyCode: (String) -> Unit = {},
+) {
+    Scaffold(topBar = { AppTopBar("Подключить GPT", "Вход с подпиской ChatGPT", onBack) }) { padding ->
         ScreenColumn(padding) {
             BusyLine(busy)
-            SectionCard {
-                Text("Перенесите файл входа", style = MaterialTheme.typography.titleMedium)
-                SupportingText("1. На компьютере войдите в Codex.")
-                SupportingText("2. Найдите .codex/auth.json в папке пользователя.")
-                SupportingText("3. Перенесите файл на телефон и выберите его ниже.")
-                Button(onClick = onPickFile, enabled = !busy, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) {
-                    Text("Выбрать auth.json")
+            if (authorization == null) {
+                SectionCard {
+                    Text("Войти через ChatGPT", style = MaterialTheme.typography.titleMedium)
+                    SupportingText("Получите одноразовый код и подтвердите вход в браузере. Компьютер и перенос файлов не нужны.")
+                    Button(onClick = onStartLogin, enabled = !busy,
+                        modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) { Text("Войти через ChatGPT") }
+                    SupportingText("Перед первым входом включите авторизацию по коду устройства в ChatGPT → Настройки → Безопасность.")
                 }
+            } else {
+                DeviceLoginCard(authorization, onOpenBrowser, onCopyCode, onCancelLogin)
             }
             error?.let { MessageCard(it, error = true) }
-            SectionCard {
-                Text("Подключение через VPN", style = MaterialTheme.typography.titleSmall)
-                SupportingText("Если VPN работает по списку приложений, добавьте tinyGlyph в маршрут. Доступ в браузере не гарантирует доступ в приложении.")
-                OutlinedButton(onClick = onCheckNetwork, enabled = !busy,
-                    modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("Проверить доступ к OpenAI") }
-                networkStatus?.let { SupportingText(it) }
+            if (authorization == null) {
+                ExpandableSection("Другой способ входа") {
+                    SupportingText("На компьютере войдите в Codex, перенесите .codex/auth.json на телефон и выберите файл.")
+                    OutlinedButton(onClick = onPickFile, enabled = !busy,
+                        modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("Импортировать auth.json") }
+                    SupportingText("Импортированный токен не обновляется автоматически. Удалите перенесённую копию файла после импорта.")
+                }
+                ExpandableSection("Подключение через VPN") {
+                    SupportingText("Если VPN работает по списку приложений, включите tinyGlyph и браузер. Они оба нужны для входа.")
+                    OutlinedButton(onClick = onCheckNetwork, enabled = !busy,
+                        modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("Проверить доступ к OpenAI") }
+                    networkStatus?.let { SupportingText(it) }
+                }
             }
-            ExpandableSection("О файле входа и лимитах") {
-                SupportingText("Файл содержит доступ к аккаунту. После импорта удалите перенесённую копию и не отправляйте её в чаты.")
-                SupportingText("Токен хранится зашифрованным. Когда он истечёт, импортируйте свежий файл. Refresh token компьютера не используется.")
-                SupportingText("Подключение показывает лимиты Codex. Количество оставшихся сообщений в обычных переписках ChatGPT недоступно.")
-            }
+            SupportingText("Сессия хранится зашифрованной. При входе через браузер tinyGlyph обновляет её автоматически.")
+            SupportingText("Здесь доступны лимиты Codex. Остаток сообщений в обычных переписках ChatGPT сервис не предоставляет.")
         }
+    }
+}
+
+@Composable
+private fun DeviceLoginCard(session: DeviceAuthorization, onOpenBrowser: () -> Unit,
+    onCopyCode: (String) -> Unit, onCancelLogin: () -> Unit) {
+    var remainingSeconds by remember(session) { mutableLongStateOf(0L) }
+    var copied by remember(session) { mutableStateOf(false) }
+    LaunchedEffect(session) {
+        while (true) {
+            remainingSeconds = ((session.expiresAtMillis - System.currentTimeMillis()) / 1000).coerceAtLeast(0)
+            delay(1000)
+        }
+    }
+    SectionCard {
+        Text("Подтвердите вход", style = MaterialTheme.typography.titleMedium)
+        SupportingText("Скопируйте код, откройте ChatGPT и введите его на странице входа. После подтверждения вернитесь в tinyGlyph.")
+        SelectionContainer {
+            Text(session.userCode, style = MaterialTheme.typography.headlineMedium,
+                textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
+        }
+        OutlinedButton(onClick = { onCopyCode(session.userCode); copied = true },
+            modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
+            Text(if (copied) "Код скопирован" else "Скопировать код")
+        }
+        Button(onClick = onOpenBrowser, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) { Text("Открыть ChatGPT") }
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
+            SupportingText("Ждём подтверждения · ${remainingSeconds / 60}:${(remainingSeconds % 60).toString().padStart(2, '0')}", Modifier.weight(1f))
+        }
+        TextButton(onClick = onCancelLogin, modifier = Modifier.fillMaxWidth()) { Text("Отменить вход") }
     }
 }

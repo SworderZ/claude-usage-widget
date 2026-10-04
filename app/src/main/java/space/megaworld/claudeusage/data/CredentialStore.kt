@@ -29,7 +29,12 @@ data class Credentials(
     val cookieHeader: String,
     val userAgent: String,
     val savedAtMillis: Long,
-)
+    /** Only a session created on this device may own a refresh token. */
+    val refreshToken: String? = null,
+    val expiresAtMillis: Long? = null,
+) {
+    override fun toString(): String = "Credentials(savedAtMillis=$savedAtMillis, renewable=${refreshToken != null})"
+}
 
 /**
  * Секреты в DataStore, зашифрованные AEAD-ключом из Android Keystore (Tink).

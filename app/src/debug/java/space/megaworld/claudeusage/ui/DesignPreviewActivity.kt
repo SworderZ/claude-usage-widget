@@ -50,7 +50,14 @@ class DesignPreviewActivity : ComponentActivity() {
             ClaudeUsageTheme(state.provider) {
                 when (page) {
                     "WIDGET" -> WidgetPreview(state, intent.getIntExtra("width", 320), intent.getIntExtra("height", 170))
-                    "LOGIN_GPT" -> OpenAiLoginContent(false,null,null,{},{},{ finish() })
+                    "LOGIN_GPT" -> {
+                        val sample = remember { DeviceAuthorization("preview", "ABCD-1234", 5000, now + 900_000) }
+                        var authorization by remember { mutableStateOf(if (scenario == "pending") sample else null) }
+                        OpenAiLoginContent(authorization != null,
+                            if (scenario == "error") "Время действия кода закончилось. Начните вход заново." else null,
+                            null,{},{},{ finish() }, authorization = authorization,
+                            onStartLogin = { authorization = sample }, onCancelLogin = { authorization = null })
+                    }
                     "LOGIN_MANUAL" -> {
                         var input by remember { mutableStateOf("") }
                         ManualLoginContent(input,false,null,{ input = it },{},{},{ finish() })

@@ -133,7 +133,7 @@ private fun ChannelCard(channel: AmbientChannel, selected: GlyphChannelMode, ena
             horizontalAlignment = Alignment.CenterHorizontally)
         CenteredSupportingText(when (selected) {
             GlyphChannelMode.OFF -> "Этот канал погашен."
-            GlyphChannelMode.RAIN -> "Яркость показывает вероятность осадков. Ниже 30% свет погашен."
+            GlyphChannelMode.RAIN -> "Яркость показывает вероятность осадков. Даже небольшой шанс даёт слабое свечение; при 0% свет погашен."
             GlyphChannelMode.IDLE -> "Свет показывает время с выключения экрана."
         })
         OutlinedButton(onClick = onTest, enabled = enabled, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {

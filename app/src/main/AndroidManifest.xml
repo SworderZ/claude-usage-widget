@@ -69,7 +69,7 @@
         </activity>
 
         <activity android:name=".ui.OpenAiLoginActivity"
-            android:windowSoftInputMode="adjustResize" android:exported="false" android:label="Подключить Codex" />
+            android:windowSoftInputMode="adjustResize" android:exported="false" android:label="Подключить GPT" />
 
         <activity
             android:name=".ui.ManualLoginActivity"

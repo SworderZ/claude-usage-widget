@@ -53,10 +53,19 @@ class GlyphLightTest {
     }
 
     @Test
-    fun `rain channel is dark without a forecast and below thirty percent`() {
+    fun `rain channel is dark only without a forecast or without rain`() {
         assertEquals(GlyphLight.OFF, GlyphLight.forRain(null))
         assertEquals(GlyphLight.OFF, GlyphLight.forRain(0))
-        assertEquals(GlyphLight.OFF, GlyphLight.forRain(29))
+        assertEquals(GlyphLight.OFF, GlyphLight.forRain(-1))
+    }
+
+    @Test
+    fun `low rain chance reaches both selected short channels`() {
+        val settings = AmbientSettings(channelA = GlyphChannelMode.RAIN, channelB = GlyphChannelMode.RAIN)
+        assertEquals(GlyphLight.FAINT, settings.lightFor(AmbientChannel.A, 0, 13))
+        assertEquals(GlyphLight.FAINT, settings.lightFor(AmbientChannel.B, 0, 13))
+        assertEquals(GlyphLight.FAINT, GlyphLight.forRain(1))
+        assertEquals(GlyphLight.FAINT, GlyphLight.forRain(29))
     }
 
     @Test

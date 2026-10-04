@@ -117,9 +117,9 @@ class OpenAiUsageClient(
                     response.header("Content-Type"), response.header("cf-mitigated"))
                 when {
                     response.code == 401 && result == ApiResult.Unauthorized ->
-                        "Доступ к серверу есть: HTTP 401 на запрос без токена — ожидаемый ответ. Теперь импортируйте auth.json. Эта проверка не подтверждает действительность токена."
+                        "Доступ к серверу лимитов есть: HTTP 401 без токена — ожидаемый ответ. Теперь войдите через ChatGPT."
                     result is ApiResult.Failure -> result.message
-                    else -> "Сервер ответил HTTP ${response.code}. Проверка выполнена без токена; попробуйте импорт файла."
+                    else -> "Сервер ответил HTTP ${response.code}. Проверка выполнена без токена; попробуйте войти через ChatGPT."
                 }
             }
         } catch (e: java.io.IOException) {

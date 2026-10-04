@@ -109,7 +109,7 @@ object GlyphLight {
      */
     fun forRain(probabilityPercent: Int?): Int = when {
         probabilityPercent == null -> OFF
-        probabilityPercent < 30 -> OFF
+        probabilityPercent <= 0 -> OFF
         probabilityPercent < 50 -> FAINT
         probabilityPercent < 70 -> 1800
         else -> MAX

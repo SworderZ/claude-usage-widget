@@ -138,7 +138,7 @@ class UsageRepository(
                 writeStatus(UsageStatus.NOT_AUTHORIZED, null, provider)
                 return@withLock RefreshResult.NotAuthorized
             }
-            return@withLock when (val result = OpenAiUsageClient().fetch(credentials)) {
+            return@withLock when (val result = OpenAiSessionClient().fetch(credentials, openAiCredentialStore::save)) {
                 is ApiResult.Success -> {
                     val snapshot = UsageSnapshot(windows = result.value, fetchedAtMillis = System.currentTimeMillis())
                     context.appDataStore.edit {
@@ -210,7 +210,7 @@ class UsageRepository(
     }
 
     /** Полный выход: токены, настройки и кеш. Cookies WebView чистит вызывающая сторона. */
-    suspend fun logout() {
+    suspend fun logout() = refreshMutex.withLock {
         val provider = settingsStore.provider.first()
         credentialsFor(provider).clear()
         if (provider == UsageProvider.CLAUDE) settingsStore.clear()
@@ -326,6 +326,20 @@ class UsageRepository(
                 RefreshResult.Success(snapshot)
             }
         }
+    }
+
+    /** A successful device login creates an independent, renewable phone session. */
+    internal suspend fun connectOpenAi(credentials: Credentials): RefreshResult {
+        refreshMutex.withLock {
+            openAiCredentialStore.save(credentials)
+            settingsStore.setProvider(UsageProvider.CODEX)
+            context.appDataStore.edit {
+                it.remove(snapshotKey(UsageProvider.CODEX))
+                it.remove(errorKey(UsageProvider.CODEX))
+                it[statusKey(UsageProvider.CODEX)] = UsageStatus.NEVER_LOADED.name
+            }
+        }
+        return refresh(UsageProvider.CODEX)
     }
 
     private fun credentialsFor(provider: UsageProvider) = if (provider == UsageProvider.CODEX) openAiCredentialStore else credentialStore
