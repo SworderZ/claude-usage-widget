@@ -55,6 +55,8 @@ def main():
                  ("LOGIN_GPT", "GPT", "data"), ("LOGIN_MANUAL", "CLAUDE", "data")]
         if os.environ.get("PREVIEW_SCOPE") == "layout-fixes":
             cases = [("SETTINGS", "CLAUDE", "data"), ("GLYPH", "GPT", "data"), ("LOGIN_MANUAL", "CLAUDE", "data")]
+        elif os.environ.get("PREVIEW_SCOPE") == "glyph":
+            cases = [("GLYPH", "GPT", "data")]
         for screen, provider, scenario in cases:
             open_page(screen, provider, scenario)
             name = f"{prefix}-{screen.lower()}-{provider.lower()}-{scenario}"
@@ -81,7 +83,7 @@ def main():
                 adb("shell", "input", "tap", str((x1 + x2) // 2), str((y1 + y2) // 2))
                 capture(f"{name}-keyboard")
                 adb("shell", "input", "keyevent", "4")
-        for widget_height in [60, 130, 170, 230, 260]:
+        for widget_height in ([] if os.environ.get("PREVIEW_SCOPE") == "glyph" else [60, 130, 170, 230, 260]):
             for provider in (["GPT"] if os.environ.get("PREVIEW_SCOPE") == "layout-fixes" else ["CLAUDE", "GPT"]):
                 open_page("WIDGET", provider, width=280, height=widget_height)
                 capture(f"{prefix}-widget-{provider.lower()}-{widget_height}")

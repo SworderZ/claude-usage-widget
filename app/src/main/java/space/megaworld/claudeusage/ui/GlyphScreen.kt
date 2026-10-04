@@ -21,6 +21,7 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
@@ -69,11 +70,13 @@ fun GlyphScreen(
                 }
                 if (state.ambient.idleEnabled) {
                     SectionCard {
-                        Text("Телефон отдыхает", style = MaterialTheme.typography.titleMedium)
-                        SupportingText("Загорается после выбранного времени с выключения экрана.")
+                        Text("Телефон отдыхает", style = MaterialTheme.typography.titleMedium,
+                            modifier = Modifier.fillMaxWidth(), textAlign = TextAlign.Center)
+                        CenteredSupportingText("Загорается после выбранного времени с выключения экрана.")
                         ChoiceChips(AmbientSettings.ALLOWED_IDLE_MINUTES.toList(), state.ambient.idleThresholdMinutes,
-                            !busy, label = { "$it мин" }, onSelect = onSelectIdleMinutes)
-                        SupportingText("Заблокируйте экран и положите телефон экраном вниз. Свет постепенно станет ярче. Включение экрана сбрасывает отсчёт.")
+                            !busy, label = { "$it мин" }, onSelect = onSelectIdleMinutes,
+                            horizontalAlignment = Alignment.CenterHorizontally)
+                        CenteredSupportingText("Заблокируйте экран и положите телефон экраном вниз. Свет постепенно станет ярче. Включение экрана сбрасывает отсчёт.")
                         IdleAlarmNotice()
                     }
                 }
@@ -106,11 +109,19 @@ fun GlyphScreen(
 
 @Composable
 private fun ChannelHeading(channel: String, title: String) {
-    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+    Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp, Alignment.CenterHorizontally)) {
         Box(Modifier.size(36.dp).background(MaterialTheme.colorScheme.surfaceContainerHighest, RoundedCornerShape(12.dp)),
             contentAlignment = Alignment.Center) { Text(channel, style = MaterialTheme.typography.titleMedium) }
-        Text(title, style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
+        Text(title, style = MaterialTheme.typography.titleMedium,
+            modifier = Modifier.weight(1f, fill = false), textAlign = TextAlign.Center)
     }
+}
+
+@Composable
+private fun CenteredSupportingText(text: String) {
+    Text(text, modifier = Modifier.fillMaxWidth(), textAlign = TextAlign.Center,
+        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
 }
 
 @Composable
@@ -118,14 +129,15 @@ private fun ChannelCard(channel: AmbientChannel, selected: GlyphChannelMode, ena
     onSelect: (GlyphChannelMode) -> Unit, onTest: () -> Unit) {
     SectionCard {
         ChannelHeading(channel.name, "Короткий канал")
-        ChoiceChips(GlyphChannelMode.entries, selected, enabled, label = { it.label }, onSelect = onSelect)
-        SupportingText(when (selected) {
+        ChoiceChips(GlyphChannelMode.entries, selected, enabled, label = { it.label }, onSelect = onSelect,
+            horizontalAlignment = Alignment.CenterHorizontally)
+        CenteredSupportingText(when (selected) {
             GlyphChannelMode.OFF -> "Этот канал погашен."
             GlyphChannelMode.RAIN -> "Яркость показывает вероятность осадков. Ниже 30% свет погашен."
             GlyphChannelMode.IDLE -> "Свет показывает время с выключения экрана."
         })
         OutlinedButton(onClick = onTest, enabled = enabled, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
-            Text("Проверить $channel · 5 секунд")
+            Text("Проверить $channel · 5 секунд", textAlign = TextAlign.Center)
         }
     }
 }
@@ -136,19 +148,21 @@ private fun StripCard(state: UsageState, busy: Boolean, onSelect: (GlyphStripMod
     val percent = state.ambient.stripPercent(state.snapshot?.fiveHour?.utilization, state.rainForecast?.probabilityPercent)
     SectionCard {
         ChannelHeading("C", "Полоса прогресса")
-        ChoiceChips(GlyphStripMode.entries, mode, !busy, label = { it.label }, onSelect = onSelect)
-        SupportingText(when (mode) {
+        ChoiceChips(GlyphStripMode.entries, mode, !busy, label = { it.label }, onSelect = onSelect,
+            horizontalAlignment = Alignment.CenterHorizontally)
+        CenteredSupportingText(when (mode) {
             GlyphStripMode.USAGE -> "Расход 5-часового окна ${state.provider.displayLabel()}"
             GlyphStripMode.RAIN -> state.ambient.place?.name ?: "Добавьте город в блоке погоды ниже."
             GlyphStripMode.OFF -> "Полоса погашена."
         })
         if (mode != GlyphStripMode.OFF && percent != null) {
-            Text("$percent%", style = MaterialTheme.typography.headlineMedium, color = MaterialTheme.colorScheme.primary)
+            Text("$percent%", style = MaterialTheme.typography.headlineMedium, color = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.fillMaxWidth(), textAlign = TextAlign.Center)
             LinearProgressIndicator(progress = { percent / 100f }, modifier = Modifier.fillMaxWidth().height(8.dp),
                 trackColor = MaterialTheme.colorScheme.surfaceContainerHighest)
-            SupportingText("Заполнение полосы соответствует проценту.")
+            CenteredSupportingText("Заполнение полосы соответствует проценту.")
         } else if (mode != GlyphStripMode.OFF && (mode != GlyphStripMode.RAIN || state.ambient.place != null)) {
-            SupportingText(if (mode == GlyphStripMode.USAGE) "Данные о лимите ещё не загружены." else "Прогноз ещё не загружен.")
+            CenteredSupportingText(if (mode == GlyphStripMode.USAGE) "Данные о лимите ещё не загружены." else "Прогноз ещё не загружен.")
         }
     }
 }
@@ -216,7 +230,7 @@ private fun IdleAlarmNotice() {
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { allowed = UsageForegroundService.canScheduleExact(context) }
     if (allowed) return
     HorizontalDivider()
-    SupportingText("Разрешите точные будильники, чтобы Android не задерживал включение подсветки во время сна.")
+    CenteredSupportingText("Разрешите точные будильники, чтобы Android не задерживал включение подсветки во время сна.")
     OutlinedButton(onClick = { context.startActivity(Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM)
         .setData(Uri.parse("package:" + context.packageName))) }, modifier = Modifier.fillMaxWidth()) { Text("Разрешить будильники") }
 }

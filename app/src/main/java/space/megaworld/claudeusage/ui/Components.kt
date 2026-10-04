@@ -67,8 +67,11 @@ internal fun SupportingText(text: String, modifier: Modifier = Modifier) {
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 internal fun <T> ChoiceChips(options: List<T>, selected: T, enabled: Boolean,
-    label: (T) -> String, onSelect: (T) -> Unit) {
-    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+    label: (T) -> String, onSelect: (T) -> Unit,
+    horizontalAlignment: Alignment.Horizontal = Alignment.Start) {
+    FlowRow(modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(8.dp, horizontalAlignment),
+        verticalArrangement = Arrangement.spacedBy(4.dp)) {
         options.forEach { option ->
             FilterChip(selected = selected == option, onClick = { onSelect(option) }, enabled = enabled,
                 label = { Text(label(option)) }, modifier = Modifier.heightIn(min = 48.dp))
