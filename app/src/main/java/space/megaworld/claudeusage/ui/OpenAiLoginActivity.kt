@@ -67,37 +67,39 @@ internal fun OpenAiLoginContent(
     authorization: DeviceAuthorization? = null, onStartLogin: () -> Unit = {},
     onCancelLogin: () -> Unit = {}, onOpenBrowser: () -> Unit = {}, onCopyCode: (String) -> Unit = {},
 ) {
-    Scaffold(topBar = { AppTopBar("Подключить GPT", "Вход с подпиской ChatGPT", onBack) }) { padding ->
-        ScreenColumn(padding) {
-            BusyLine(busy)
-            if (authorization == null) {
-                SectionCard {
-                    Text("Аккаунт ChatGPT", style = MaterialTheme.typography.titleMedium)
-                    SupportingText("Получите одноразовый код и подтвердите вход в браузере. Компьютер и перенос файлов не нужны.")
-                    Button(onClick = onStartLogin, enabled = !busy,
-                        modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) { Text("Войти через ChatGPT") }
-                    SupportingText("Перед первым входом включите авторизацию по коду устройства в ChatGPT → Настройки → Безопасность.")
+    key(authorization != null) {
+        Scaffold(topBar = { AppTopBar("Подключить GPT", "Вход с подпиской ChatGPT", onBack) }) { padding ->
+            ScreenColumn(padding) {
+                BusyLine(busy)
+                if (authorization == null) {
+                    SectionCard {
+                        Text("Аккаунт ChatGPT", style = MaterialTheme.typography.titleMedium)
+                        SupportingText("Получите одноразовый код и подтвердите вход в браузере. Компьютер и перенос файлов не нужны.")
+                        Button(onClick = onStartLogin, enabled = !busy,
+                            modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) { Text("Войти через ChatGPT", textAlign = TextAlign.Center) }
+                        SupportingText("Перед первым входом включите авторизацию по коду устройства в ChatGPT → Настройки → Безопасность.")
+                    }
+                } else {
+                    DeviceLoginCard(authorization, onOpenBrowser, onCopyCode, onCancelLogin)
                 }
-            } else {
-                DeviceLoginCard(authorization, onOpenBrowser, onCopyCode, onCancelLogin)
+                error?.let { MessageCard(it, error = true) }
+                if (authorization == null) {
+                    ExpandableSection("Другой способ входа") {
+                        SupportingText("На компьютере войдите в Codex, перенесите .codex/auth.json на телефон и выберите файл.")
+                        OutlinedButton(onClick = onPickFile, enabled = !busy,
+                            modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("Импортировать auth.json", textAlign = TextAlign.Center) }
+                        SupportingText("Импортированный токен не обновляется автоматически. Удалите перенесённую копию файла после импорта.")
+                    }
+                    ExpandableSection("Подключение через VPN") {
+                        SupportingText("Если VPN работает по списку приложений, включите tinyGlyph и браузер. Они оба нужны для входа.")
+                        OutlinedButton(onClick = onCheckNetwork, enabled = !busy,
+                            modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("Проверить доступ к OpenAI", textAlign = TextAlign.Center) }
+                        networkStatus?.let { SupportingText(it) }
+                    }
+                }
+                SupportingText("Сессия хранится зашифрованной. При входе через браузер tinyGlyph обновляет её автоматически.")
+                SupportingText("Здесь доступны лимиты Codex. Остаток сообщений в обычных переписках ChatGPT сервис не предоставляет.")
             }
-            error?.let { MessageCard(it, error = true) }
-            if (authorization == null) {
-                ExpandableSection("Другой способ входа") {
-                    SupportingText("На компьютере войдите в Codex, перенесите .codex/auth.json на телефон и выберите файл.")
-                    OutlinedButton(onClick = onPickFile, enabled = !busy,
-                        modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("Импортировать auth.json") }
-                    SupportingText("Импортированный токен не обновляется автоматически. Удалите перенесённую копию файла после импорта.")
-                }
-                ExpandableSection("Подключение через VPN") {
-                    SupportingText("Если VPN работает по списку приложений, включите tinyGlyph и браузер. Они оба нужны для входа.")
-                    OutlinedButton(onClick = onCheckNetwork, enabled = !busy,
-                        modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("Проверить доступ к OpenAI") }
-                    networkStatus?.let { SupportingText(it) }
-                }
-            }
-            SupportingText("Сессия хранится зашифрованной. При входе через браузер tinyGlyph обновляет её автоматически.")
-            SupportingText("Здесь доступны лимиты Codex. Остаток сообщений в обычных переписках ChatGPT сервис не предоставляет.")
         }
     }
 }
@@ -122,14 +124,14 @@ private fun DeviceLoginCard(session: DeviceAuthorization, onOpenBrowser: () -> U
         }
         OutlinedButton(onClick = { onCopyCode(session.userCode); copied = true },
             modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
-            Text(if (copied) "Код скопирован" else "Скопировать код")
+            Text(if (copied) "Код скопирован" else "Скопировать код", textAlign = TextAlign.Center)
         }
-        Button(onClick = onOpenBrowser, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) { Text("Открыть ChatGPT") }
+        Button(onClick = onOpenBrowser, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) { Text("Открыть ChatGPT", textAlign = TextAlign.Center) }
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
             SupportingText("Ждём подтверждения · ${remainingSeconds / 60}:${(remainingSeconds % 60).toString().padStart(2, '0')}", Modifier.weight(1f))
         }
-        TextButton(onClick = onCancelLogin, modifier = Modifier.fillMaxWidth()) { Text("Отменить вход") }
+        TextButton(onClick = onCancelLogin, modifier = Modifier.fillMaxWidth()) { Text("Отменить вход", textAlign = TextAlign.Center) }
     }
 }
