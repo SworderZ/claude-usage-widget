@@ -71,6 +71,18 @@
         <activity android:name=".ui.OpenAiLoginActivity"
             android:windowSoftInputMode="adjustResize" android:exported="false" android:label="Подключить GPT" />
 
+        <activity android:name=".ui.OpenAiLoginReturnActivity" android:exported="true" android:noHistory="true">
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="tinyglyph" android:host="openai-login" />
+            </intent-filter>
+        </activity>
+        <service android:name=".ui.OpenAiLoginService" android:exported="false" android:foregroundServiceType="specialUse">
+            <property android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE" android:value="Keep user-initiated account sign-in alive while the system browser completes authentication" />
+        </service>
+
         <activity
             android:name=".ui.ManualLoginActivity"
             android:windowSoftInputMode="adjustResize"

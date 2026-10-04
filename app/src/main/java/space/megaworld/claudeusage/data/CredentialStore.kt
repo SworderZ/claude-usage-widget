@@ -44,6 +44,8 @@ class CredentialStore(private val context: Context, namespace: String = "claude"
 
     private val credentialKey = stringPreferencesKey(if (namespace == "claude") "credentials_aead" else "${namespace}_credentials_aead")
     private val associatedData = "${namespace}_usage_credentials".toByteArray()
+    private val pendingKey = stringPreferencesKey("${namespace}_pending_login_aead")
+    private val pendingAssociatedData = "${namespace}_pending_login".toByteArray()
 
     private val aeadMutex = Mutex()
     @Volatile private var cachedAead: Aead? = null
@@ -73,6 +75,25 @@ class CredentialStore(private val context: Context, namespace: String = "claude"
     suspend fun clear() = withContext(Dispatchers.IO) {
         context.appDataStore.edit { it.remove(credentialKey) }
         Unit
+    }
+
+    internal suspend fun loadPendingLogin(): PendingOpenAiLogin? = withContext(Dispatchers.IO) {
+        val encoded = context.appDataStore.data.first()[pendingKey] ?: return@withContext null
+        runCatching {
+            val plain = aead().decrypt(Base64.decode(encoded, Base64.NO_WRAP), pendingAssociatedData)
+            json.decodeFromString<PendingOpenAiLogin>(plain.decodeToString())
+        }.getOrNull()
+    }
+
+    internal suspend fun savePendingLogin(login: PendingOpenAiLogin) = withContext(Dispatchers.IO) {
+        val plain = json.encodeToString(PendingOpenAiLogin.serializer(), login).toByteArray()
+        val cipher = aead().encrypt(plain, pendingAssociatedData)
+        context.appDataStore.edit { it[pendingKey] = Base64.encodeToString(cipher, Base64.NO_WRAP) }
+        Unit
+    }
+
+    internal suspend fun clearPendingLogin() {
+        context.appDataStore.edit { it.remove(pendingKey) }
     }
 
     private suspend fun aead(): Aead {

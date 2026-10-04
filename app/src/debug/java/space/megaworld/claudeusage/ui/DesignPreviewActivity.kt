@@ -53,10 +53,12 @@ class DesignPreviewActivity : ComponentActivity() {
                     "LOGIN_GPT" -> {
                         val sample = remember { DeviceAuthorization("preview", "ABCD-1234", 5000, now + 900_000) }
                         var authorization by remember { mutableStateOf(if (scenario == "pending") sample else null) }
-                        OpenAiLoginContent(authorization != null,
+                        var browser by remember { mutableStateOf(if (scenario == "browser") BrowserAuthorization.create(now) else null) }
+                        OpenAiLoginContent(authorization != null || browser != null,
                             if (scenario == "error") "Время действия кода закончилось. Начните вход заново." else null,
-                            null,{},{},{ finish() }, authorization = authorization,
-                            onStartLogin = { authorization = sample }, onCancelLogin = { authorization = null })
+                            null,{},{},{ finish() }, authorization = authorization, browserAuthorization = browser,
+                            onStartLogin = { browser = BrowserAuthorization.create(now) },
+                            onStartDeviceLogin = { authorization = sample }, onCancelLogin = { authorization = null; browser = null })
                     }
                     "LOGIN_MANUAL" -> {
                         var input by remember { mutableStateOf("") }

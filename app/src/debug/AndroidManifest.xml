@@ -2,5 +2,9 @@
     <application>
         <activity android:name=".ui.DesignPreviewActivity" android:exported="true" android:windowSoftInputMode="adjustResize" />
         <activity android:name=".ui.WidgetHostPreviewActivity" android:exported="true" android:windowSoftInputMode="adjustResize" />
+        <activity android:name=".ui.OpenAiLoginLifecyclePreviewActivity" android:exported="true" android:windowSoftInputMode="adjustResize" />
+        <service android:name=".ui.OpenAiLoginLifecyclePreviewService" android:exported="false" android:foregroundServiceType="specialUse">
+            <property android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE" android:value="Debug fixture for account sign-in lifecycle regression tests" />
+        </service>
     </application>
 </manifest>

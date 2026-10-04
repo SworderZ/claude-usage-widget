@@ -13,40 +13,51 @@ import space.megaworld.claudeusage.widget.UsageWidget
 import space.megaworld.claudeusage.worker.UsageRefreshWorker
 import java.io.IOException
 
-/** Pending login survives rotation and continues while the system browser is open. */
-class OpenAiLoginViewModel(application: Application) : AndroidViewModel(application) {
-    internal var busy by mutableStateOf(false)
-        private set
-    internal var error by mutableStateOf<String?>(null)
-        private set
+/** Observes the process-wide coordinator; leaving this Activity never cancels login. */
+class OpenAiLoginViewModel internal constructor(application: Application,
+    internal val coordinator: OpenAiLoginCoordinator) : AndroidViewModel(application) {
+    constructor(application: Application) : this(application, AppGraph.get(application).openAiLoginCoordinator)
+
+    private var loginState by mutableStateOf(coordinator.state.value)
+    private var localBusy by mutableStateOf(false)
+    private var localError by mutableStateOf<String?>(null)
+    private var importConnected by mutableStateOf(false)
     internal var networkStatus by mutableStateOf<String?>(null)
         private set
-    internal var authorization by mutableStateOf<DeviceAuthorization?>(null)
+    internal var browserLaunchRequested by mutableStateOf(false)
         private set
-    internal var connected by mutableStateOf(false)
-        private set
-    private var operation: Job? = null
+    internal val busy get() = localBusy || loginState.busy
+    internal val error get() = localError ?: loginState.error
+    internal val authorization get() = loginState.pending?.device
+    internal val browserAuthorization get() = loginState.pending?.browser
+    internal val connected get() = importConnected || loginState.connected
     private val graph = AppGraph.get(application)
-    private val auth = OpenAiAuthClient()
 
-    internal fun startLogin() = runOperation {
-        val session = auth.startDeviceLogin()
-        authorization = session
-        while (true) {
-            delay(session.intervalMillis)
-            when (val result = auth.pollDeviceLogin(session)) {
-                DevicePoll.Pending -> Unit
-                is DevicePoll.Authorized -> {
-                    ensureActive()
-                    when (graph.usageRepository.connectOpenAi(result.credentials)) {
-                        RefreshResult.SessionExpired, RefreshResult.NotAuthorized ->
-                            throw OpenAiAuthException("OpenAI отклонил сессию. Начните вход заново.")
-                        is RefreshResult.Failure, is RefreshResult.Success -> completeLogin()
-                    }
-                    break
-                }
-            }
-        }
+    init { viewModelScope.launch { coordinator.state.collect { loginState = it } } }
+
+    internal fun startLogin() {
+        if (busy) return
+        localError = null
+        browserLaunchRequested = true
+        coordinator.startBrowser()
+    }
+
+    internal fun startDeviceLogin() {
+        if (busy) return
+        localError = null
+        coordinator.startDevice()
+    }
+
+    internal fun consumeBrowserLaunch(): String? {
+        val browser = browserAuthorization ?: return null
+        if (!browserLaunchRequested) return null
+        browserLaunchRequested = false
+        return browser.authorizationUrl
+    }
+
+    internal fun acknowledgeConnection() {
+        importConnected = false
+        coordinator.acknowledgeConnection()
     }
 
     internal fun importFile(uri: Uri) = runOperation {
@@ -66,47 +77,44 @@ class OpenAiLoginViewModel(application: Application) : AndroidViewModel(applicat
         when (val result = graph.usageRepository.importOpenAi(raw)) {
             is RefreshResult.Success -> completeLogin()
             RefreshResult.SessionExpired, RefreshResult.NotAuthorized ->
-                error = "Сессия в файле истекла. Войдите через ChatGPT или импортируйте свежий auth.json."
-            is RefreshResult.Failure -> error = result.message
+                localError = "Сессия в файле истекла. Войдите через ChatGPT или импортируйте свежий auth.json."
+            is RefreshResult.Failure -> localError = result.message
         }
     }
 
     internal fun checkNetwork() = runOperation { networkStatus = OpenAiUsageClient().checkConnectivity() }
 
     internal fun cancelLogin() {
-        operation?.cancel()
-        operation = null
-        authorization = null
-        busy = false
-        error = null
+        browserLaunchRequested = false
+        localError = null
+        coordinator.cancel()
     }
 
     internal fun browserUnavailable() {
-        error = "Не удалось открыть браузер. Откройте auth.openai.com/codex/device вручную и введите код."
+        localError = "Не удалось открыть браузер. Попробуйте открыть страницу входа ещё раз или выберите вход по коду."
     }
 
     private suspend fun completeLogin() {
         val context = getApplication<Application>()
         UsageRefreshWorker.ensureScheduled(context, graph.settingsStore.currentIntervalMinutes())
         UsageWidget().updateAll(context)
-        connected = true
+        importConnected = true
     }
 
     private fun runOperation(block: suspend CoroutineScope.() -> Unit) {
         if (busy) return
-        busy = true
-        error = null
-        operation = viewModelScope.launch {
+        localBusy = true
+        localError = null
+        viewModelScope.launch {
             try { block()
             } catch (e: CancellationException) { throw e
-            } catch (e: OpenAiAuthException) { error = e.message
-            } catch (e: OpenAiImportException) { error = e.message
-            } catch (e: IOException) { error = "Нет связи с OpenAI. Проверьте интернет и VPN для tinyGlyph, затем повторите вход."
-            } catch (e: Exception) { error = "Не удалось подключить GPT. Попробуйте ещё раз."
+            } catch (e: OpenAiAuthException) { localError = e.message
+            } catch (e: OpenAiImportException) { localError = e.message
+            } catch (e: IOException) { localError = "Нет связи с OpenAI. Проверьте интернет и VPN для tinyGlyph, затем повторите вход."
+            } catch (e: Exception) { localError = "Не удалось подключить GPT. Попробуйте ещё раз."
             } finally {
                 if (currentCoroutineContext().isActive) {
-                    authorization = null
-                    busy = false
+                    localBusy = false
                 }
             }
         }

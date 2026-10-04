@@ -123,7 +123,7 @@ def main():
             cases = []
             capture_widget_configuration(prefix)
         elif os.environ.get("PREVIEW_SCOPE") == "auth":
-            cases = [("LOGIN_GPT", "GPT", "data"), ("LOGIN_GPT", "GPT", "pending"), ("LOGIN_GPT", "GPT", "error")]
+            cases = [("LOGIN_GPT", "GPT", "data"), ("LOGIN_GPT", "GPT", "pending"), ("LOGIN_GPT", "GPT", "browser"), ("LOGIN_GPT", "GPT", "error")]
         for screen, provider, scenario in cases:
             open_page(screen, provider, scenario)
             name = f"{prefix}-{screen.lower()}-{provider.lower()}-{scenario}"
@@ -136,7 +136,8 @@ def main():
                         raise RuntimeError("Device-code copy confirmation is missing")
                     capture(f"{name}-copied")
                     tap_node(text("Отменить вход"))
-                    tap_node(text("Войти через ChatGPT"))
+                    tap_node(text("Другие способы входа"))
+                    tap_node(text("Войти по коду"))
                     if not any(n.get("text") == "ABCD-1234" for n in ui_nodes()):
                         raise RuntimeError("Device-code sign-in cannot restart after cancellation")
                 for index in range(1, 3):
@@ -169,6 +170,9 @@ def main():
                 open_page("WIDGET", provider, width=280, height=widget_height)
                 capture(f"{prefix}-widget-{provider.lower()}-{widget_height}")
     adb("shell", "settings", "put", "system", "font_scale", "1.0")
+    if os.environ.get("PREVIEW_SCOPE") == "auth":
+        from verify_login_lifecycle import verify_login_lifecycle
+        verify_login_lifecycle()
     print("All preview layouts rendered without a runtime crash.")
 
 

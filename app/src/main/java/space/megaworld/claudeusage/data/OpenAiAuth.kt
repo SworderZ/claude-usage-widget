@@ -4,6 +4,7 @@ import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.*
+import kotlinx.serialization.Serializable
 import okhttp3.*
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.RequestBody.Companion.toRequestBody
@@ -16,9 +17,10 @@ import kotlin.coroutines.resumeWithException
 
 internal const val OPENAI_DEVICE_URL = "https://auth.openai.com/codex/device"
 private const val ISSUER = "https://auth.openai.com"
-// Public Codex OAuth client; this integration uses its device-code flow.
+// Public Codex OAuth client; the phone creates its own session with PKCE.
 private const val CLIENT_ID = "app_EMoamEEZ73f0CkXaXp7hrann"
 
+@Serializable
 internal data class DeviceAuthorization(
     val deviceAuthId: String,
     val userCode: String,
@@ -33,7 +35,13 @@ internal sealed interface DevicePoll {
     data class Authorized(val credentials: Credentials) : DevicePoll
 }
 
-internal class OpenAiAuthException(message: String) : IOException(message)
+internal class OpenAiAuthException(message: String, val terminal: Boolean = false) : IOException(message)
+
+internal interface OpenAiLoginApi {
+    suspend fun startDeviceLogin(): DeviceAuthorization
+    suspend fun pollDeviceLogin(session: DeviceAuthorization): DevicePoll
+    suspend fun exchangeBrowserLogin(session: BrowserAuthorization): Credentials
+}
 
 /** No browser cookies or desktop refresh tokens are involved in this login. */
 internal class OpenAiAuthClient(
@@ -41,8 +49,8 @@ internal class OpenAiAuthClient(
         .connectTimeout(15, TimeUnit.SECONDS).readTimeout(20, TimeUnit.SECONDS)
         .callTimeout(30, TimeUnit.SECONDS).followRedirects(false).build(),
     private val now: () -> Long = System::currentTimeMillis,
-) {
-    suspend fun startDeviceLogin(): DeviceAuthorization {
+) : OpenAiLoginApi {
+    override suspend fun startDeviceLogin(): DeviceAuthorization {
         val response = postJson("/api/accounts/deviceauth/usercode", buildJsonObject { put("client_id", CLIENT_ID) })
         checkResponse(response)
         return try {
@@ -59,8 +67,8 @@ internal class OpenAiAuthClient(
         }
     }
 
-    suspend fun pollDeviceLogin(session: DeviceAuthorization): DevicePoll {
-        if (now() >= session.expiresAtMillis) throw OpenAiAuthException("Время действия кода закончилось. Начните вход заново.")
+    override suspend fun pollDeviceLogin(session: DeviceAuthorization): DevicePoll {
+        if (now() >= session.expiresAtMillis) throw OpenAiAuthException("Время действия кода закончилось. Начните вход заново.", terminal = true)
         val response = postJson("/api/accounts/deviceauth/token", buildJsonObject {
             put("device_auth_id", session.deviceAuthId)
             put("user_code", session.userCode)
@@ -78,6 +86,19 @@ internal class OpenAiAuthClient(
         val tokens = post("/oauth/token", grant)
         checkResponse(tokens)
         return DevicePoll.Authorized(parseOpenAiTokenResponse(tokens.body, now()))
+    }
+
+    override suspend fun exchangeBrowserLogin(session: BrowserAuthorization): Credentials {
+        val response = post("/oauth/token", FormBody.Builder()
+            .add("grant_type", "authorization_code").add("client_id", CLIENT_ID)
+            .add("code", session.authorizationCode.checkedToken())
+            .add("code_verifier", session.verifier).add("redirect_uri", session.redirectUri).build())
+        checkResponse(response)
+        val data = Json.parseToJsonElement(response.body).jsonObject
+        if (jwtClaims(data.text("id_token"))?.text("nonce") != session.nonce) {
+            throw OpenAiAuthException("OpenAI вернул подтверждение другого входа. Начните вход заново.", terminal = true)
+        }
+        return parseOpenAiTokenResponse(response.body, now())
     }
 
     suspend fun refresh(credentials: Credentials): ApiResult<Credentials> {
@@ -106,7 +127,7 @@ internal class OpenAiAuthClient(
 
     private suspend fun post(path: String, body: RequestBody): AuthResponse {
         val request = Request.Builder().url(ISSUER + path).post(body)
-            .header("Accept", "application/json").header("User-Agent", "tinyGlyph/0.16.0")
+            .header("Accept", "application/json").header("User-Agent", "tinyGlyph/0.16.1")
             .header("originator", "tinyglyph").build()
         return client.newCall(request).awaitResponse().use {
             AuthResponse(it.code, it.body?.string().orEmpty(), it.header("Content-Type"), it.header("cf-mitigated"))
@@ -120,6 +141,8 @@ internal class OpenAiAuthClient(
             "deviceauth_expired", "expired_token", "deviceauth_code_expired" -> "Код входа истёк. Начните вход заново."
             "access_denied", "deviceauth_access_denied" -> "Вход отменён в браузере. Можно попробовать снова."
             "deviceauth_disabled", "device_code_login_disabled" -> "Включите вход по коду устройства в настройках ChatGPT: Безопасность."
+            "deviceauth_invalid_browser_state" -> "Страница входа по коду устарела. Начните вход заново кнопкой «Войти через ChatGPT»."
+            "invalid_grant" -> "Подтверждение входа истекло или уже использовано. Начните вход заново."
             "unsupported_country_region_territory" -> "OpenAI недоступен через текущий узел VPN. Выберите другой узел."
             else -> when (response.status) {
                 404 -> "Вход по коду устройства недоступен. Проверьте настройки безопасности ChatGPT или используйте импорт файла."
@@ -127,7 +150,9 @@ internal class OpenAiAuthClient(
                 else -> "Не удалось выполнить вход: OpenAI ответил HTTP ${response.status}. Повторите попытку."
             }
         }
-        throw OpenAiAuthException(message)
+        throw OpenAiAuthException(message, terminal = response.errorCode() in listOf(
+            "deviceauth_expired", "expired_token", "deviceauth_code_expired", "access_denied",
+            "deviceauth_access_denied", "invalid_grant", "deviceauth_invalid_browser_state"))
     }
 }
 

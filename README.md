@@ -38,20 +38,26 @@ name to open that account.
 
 ### Connect Codex
 
-Choose GPT on the Limits tab and select **Sign in with ChatGPT**. Enable device-code
-login in ChatGPT's Security settings, copy the one-time code, and open the browser
-to confirm it. Return to tinyGlyph after approving the sign-in. No computer is
+Choose GPT on the Limits tab and select **Sign in with ChatGPT**. Sign in and approve
+the connection in your browser, then return to tinyGlyph. No code or computer is
 needed. The phone keeps its own encrypted session and refreshes it automatically.
+Switching apps or a temporary network interruption keeps the current sign-in.
+Pending attempts are encrypted and restored if Android restarts the app.
 
-The **Other sign-in method** section still accepts `.codex/auth.json` from a signed-in
-computer. This fallback imports only the access token; it never rotates the
+Under **Other sign-in methods**, device-code login remains available after enabling
+it in ChatGPT's Security settings. Open the page from the current attempt and use
+its code. If the browser reports an expired or changed sign-in, cancel that attempt
+and use the primary **Sign in with ChatGPT** button.
+
+This section also accepts `.codex/auth.json` from a signed-in computer. The file
+fallback imports only the access token; it never rotates the
 computer's refresh token. Import a fresh file when that token expires. Delete the
 transferred copy after import and keep it out of repositories and messages.
 
 **The GPT option shows Codex usage limits.** A remaining-message counter for ordinary
 ChatGPT conversations is not available in this app.
 
-If your VPN routes selected apps, include tinyGlyph (`space.megaworld.claudeusage`).
+If your VPN routes selected apps, include tinyGlyph (`space.megaworld.claudeusage`) and your browser.
 Browser access alone does not confirm that tinyGlyph uses the same route. The
 connection screen includes an OpenAI connectivity check and reports network or
 access errors separately from an expired session.

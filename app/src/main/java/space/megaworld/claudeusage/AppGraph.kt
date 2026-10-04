@@ -5,6 +5,11 @@ import space.megaworld.claudeusage.data.ApiClient
 import space.megaworld.claudeusage.data.CredentialStore
 import space.megaworld.claudeusage.data.SettingsStore
 import space.megaworld.claudeusage.data.UsageRepository
+import space.megaworld.claudeusage.data.*
+import kotlinx.coroutines.*
+import androidx.glance.appwidget.updateAll
+import space.megaworld.claudeusage.widget.UsageWidget
+import space.megaworld.claudeusage.worker.UsageRefreshWorker
 
 /**
  * Ручной DI: зависимостей мало, полноценный фреймворк не нужен.
@@ -22,6 +27,23 @@ class AppGraph private constructor(context: Context) {
 
     val usageRepository: UsageRepository by lazy {
         UsageRepository(appContext, credentialStore, settingsStore, apiClient, openAiCredentialStore = openAiCredentialStore)
+    }
+
+    private val loginScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+    internal val openAiLoginCoordinator: OpenAiLoginCoordinator by lazy {
+        OpenAiLoginCoordinator(loginScope, OpenAiAuthClient(), openAiCredentialStore.loginVault(), connect = { credentials ->
+            when (usageRepository.connectOpenAi(credentials)) {
+                RefreshResult.SessionExpired, RefreshResult.NotAuthorized ->
+                    throw OpenAiAuthException("OpenAI отклонил сессию. Начните вход заново.", terminal = true)
+                is RefreshResult.Success, is RefreshResult.Failure -> {
+                    // The account is stored already; a widget refresh must not consume its grant again.
+                    runCatching {
+                        UsageRefreshWorker.ensureScheduled(appContext, settingsStore.currentIntervalMinutes())
+                        UsageWidget().updateAll(appContext)
+                    }
+                }
+            }
+        })
     }
 
     companion object {

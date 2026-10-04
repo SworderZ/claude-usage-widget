@@ -22,12 +22,19 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.ViewModelProvider
 import kotlinx.coroutines.delay
+import space.megaworld.claudeusage.data.BrowserAuthorization
 import space.megaworld.claudeusage.data.DeviceAuthorization
 import space.megaworld.claudeusage.data.OPENAI_DEVICE_URL
 import space.megaworld.claudeusage.data.UsageProvider
 
-class OpenAiLoginActivity : ComponentActivity() {
-    private val model by lazy { ViewModelProvider(this)[OpenAiLoginViewModel::class.java] }
+open class OpenAiLoginActivity : ComponentActivity() {
+    private val model by lazy { ViewModelProvider(this, loginViewModelFactory())[OpenAiLoginViewModel::class.java] }
+    protected open fun loginViewModelFactory(): ViewModelProvider.Factory = defaultViewModelProviderFactory
+    protected open fun startLoginKeeper() = OpenAiLoginService.start(this)
+    protected open fun openLoginBrowser(url: String) {
+        try { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url))) }
+        catch (e: ActivityNotFoundException) { model.browserUnavailable() }
+    }
     private val pickFile = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) model.importFile(uri)
     }
@@ -38,18 +45,27 @@ class OpenAiLoginActivity : ComponentActivity() {
             SystemBarStyle.dark(android.graphics.Color.TRANSPARENT))
         setContent {
             ClaudeUsageTheme(UsageProvider.CODEX) {
-                LaunchedEffect(model.connected) { if (model.connected) finish() }
+                LaunchedEffect(model.connected) {
+                    if (model.connected) { model.acknowledgeConnection(); finish() }
+                }
+                LaunchedEffect(model.browserAuthorization?.state, model.browserLaunchRequested) {
+                    model.consumeBrowserLaunch()?.let(::openLoginBrowser)
+                }
+                LaunchedEffect(model.authorization, model.browserAuthorization?.state) {
+                    if (model.authorization != null || model.browserAuthorization != null) startLoginKeeper()
+                }
                 BackHandler { model.cancelLogin(); finish() }
                 OpenAiLoginContent(
                     busy = model.busy, error = model.error, networkStatus = model.networkStatus,
                     onPickFile = { pickFile.launch(arrayOf("application/json", "text/plain", "application/octet-stream")) },
                     onCheckNetwork = model::checkNetwork,
                     onBack = { model.cancelLogin(); finish() },
-                    authorization = model.authorization, onStartLogin = model::startLogin,
+                    authorization = model.authorization, browserAuthorization = model.browserAuthorization,
+                    onStartLogin = { model.startLogin(); startLoginKeeper() },
+                    onStartDeviceLogin = { model.startDeviceLogin(); startLoginKeeper() },
                     onCancelLogin = model::cancelLogin,
                     onOpenBrowser = {
-                        try { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(OPENAI_DEVICE_URL))) }
-                        catch (e: ActivityNotFoundException) { model.browserUnavailable() }
+                        openLoginBrowser(model.browserAuthorization?.authorizationUrl ?: OPENAI_DEVICE_URL)
                     },
                     onCopyCode = { code ->
                         getSystemService(ClipboardManager::class.java).setPrimaryClip(ClipData.newPlainText("Код входа ChatGPT", code))
@@ -64,27 +80,33 @@ class OpenAiLoginActivity : ComponentActivity() {
 internal fun OpenAiLoginContent(
     busy: Boolean, error: String?, networkStatus: String?,
     onPickFile: () -> Unit, onCheckNetwork: () -> Unit, onBack: () -> Unit,
-    authorization: DeviceAuthorization? = null, onStartLogin: () -> Unit = {},
+    authorization: DeviceAuthorization? = null, browserAuthorization: BrowserAuthorization? = null,
+    onStartLogin: () -> Unit = {}, onStartDeviceLogin: () -> Unit = {},
     onCancelLogin: () -> Unit = {}, onOpenBrowser: () -> Unit = {}, onCopyCode: (String) -> Unit = {},
 ) {
-    key(authorization != null) {
+    key(if (authorization != null) 1 else if (browserAuthorization != null) 2 else 0) {
         Scaffold(topBar = { AppTopBar("Подключить GPT", "Вход с подпиской ChatGPT", onBack) }) { padding ->
             ScreenColumn(padding) {
                 BusyLine(busy)
-                if (authorization == null) {
+                if (authorization == null && browserAuthorization == null) {
                     SectionCard {
                         Text("Аккаунт ChatGPT", style = MaterialTheme.typography.titleMedium)
-                        SupportingText("Получите одноразовый код и подтвердите вход в браузере. Компьютер и перенос файлов не нужны.")
+                        SupportingText("Войдите в аккаунт в браузере и разрешите подключение. После подтверждения вернитесь в tinyGlyph.")
                         Button(onClick = onStartLogin, enabled = !busy,
                             modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) { Text("Войти через ChatGPT", textAlign = TextAlign.Center) }
-                        SupportingText("Перед первым входом включите авторизацию по коду устройства в ChatGPT → Настройки → Безопасность.")
                     }
+                } else if (browserAuthorization != null) {
+                    BrowserLoginCard(browserAuthorization, onOpenBrowser, onCancelLogin)
                 } else {
-                    DeviceLoginCard(authorization, onOpenBrowser, onCopyCode, onCancelLogin)
+                    DeviceLoginCard(authorization!!, onOpenBrowser, onCopyCode, onCancelLogin)
                 }
                 error?.let { MessageCard(it, error = true) }
-                if (authorization == null) {
-                    ExpandableSection("Другой способ входа") {
+                if (authorization == null && browserAuthorization == null) {
+                    ExpandableSection("Другие способы входа") {
+                        SupportingText("Для входа по коду включите авторизацию устройства в ChatGPT → Настройки → Безопасность.")
+                        OutlinedButton(onClick = onStartDeviceLogin, enabled = !busy,
+                            modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("Войти по коду", textAlign = TextAlign.Center) }
+
                         SupportingText("На компьютере войдите в Codex, перенесите .codex/auth.json на телефон и выберите файл.")
                         OutlinedButton(onClick = onPickFile, enabled = !busy,
                             modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("Импортировать auth.json", textAlign = TextAlign.Center) }
@@ -133,5 +155,24 @@ private fun DeviceLoginCard(session: DeviceAuthorization, onOpenBrowser: () -> U
             SupportingText("Ждём подтверждения · ${remainingSeconds / 60}:${(remainingSeconds % 60).toString().padStart(2, '0')}", Modifier.weight(1f))
         }
         TextButton(onClick = onCancelLogin, modifier = Modifier.fillMaxWidth()) { Text("Отменить вход", textAlign = TextAlign.Center) }
+    }
+}
+
+@Composable
+private fun BrowserLoginCard(session: BrowserAuthorization, onOpenBrowser: () -> Unit, onCancelLogin: () -> Unit) {
+    SectionCard {
+        Text(if (session.authorizationCode == null) "Завершите вход в браузере" else "Подключаем аккаунт",
+            style = MaterialTheme.typography.titleMedium)
+        SupportingText(if (session.authorizationCode == null)
+            "Войдите в ChatGPT и разрешите подключение. Можно переключаться между браузером и tinyGlyph: текущий вход сохранён."
+            else "Подтверждение получено. Сохраняем сессию и загружаем лимиты.")
+        if (session.authorizationCode == null) {
+            Button(onClick = onOpenBrowser, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) {
+                Text("Открыть браузер", textAlign = TextAlign.Center)
+            }
+        }
+        TextButton(onClick = onCancelLogin, modifier = Modifier.fillMaxWidth()) {
+            Text("Отменить вход", textAlign = TextAlign.Center)
+        }
     }
 }

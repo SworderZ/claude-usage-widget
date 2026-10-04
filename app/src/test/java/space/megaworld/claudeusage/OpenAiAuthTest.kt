@@ -91,6 +91,17 @@ class OpenAiAuthTest {
         }
     }
 
+    @Test fun `invalid device browser state ends the attempt and offers the primary browser flow`() = runTest {
+        val http = client { response(it, 400, """{"error":{"code":"deviceauth_invalid_browser_state"}}""") }
+        try {
+            OpenAiAuthClient(http) { now }.pollDeviceLogin(session)
+            fail("Invalid browser state accepted")
+        } catch (e: OpenAiAuthException) {
+            assertTrue(e.terminal)
+            assertTrue(e.message!!.contains("Войти через ChatGPT"))
+        }
+    }
+
     @Test fun `quota rejection refreshes once and persists rotated credentials before retry`() = runTest {
         var quotaRequests = 0
         var saved: Credentials? = null
