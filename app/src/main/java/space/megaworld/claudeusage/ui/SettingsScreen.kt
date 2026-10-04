@@ -10,7 +10,9 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
@@ -19,6 +21,7 @@ import space.megaworld.claudeusage.data.SettingsStore
 import space.megaworld.claudeusage.data.UsageProvider
 import space.megaworld.claudeusage.data.UsageState
 import space.megaworld.claudeusage.glyph.UsageForegroundService
+import space.megaworld.claudeusage.R
 
 @Composable
 fun SettingsScreen(state: UsageState, busy: Boolean,
@@ -62,6 +65,28 @@ fun SettingsScreen(state: UsageState, busy: Boolean,
                         modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("Обновить список") }
                 }
             }
+            AboutSettingsCard()
+        }
+    }
+}
+
+@Composable
+private fun AboutSettingsCard() {
+    val context = LocalContext.current
+    val version = remember(context) { installedVersionName(context) }
+    Card(onClick = { context.startActivity(Intent(context, AboutActivity::class.java)) },
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
+        Row(Modifier.fillMaxWidth().heightIn(min = 72.dp).padding(18.dp),
+            verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+            Icon(painterResource(R.drawable.ic_info), contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant)
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text("О приложении", style = MaterialTheme.typography.titleSmall)
+                SupportingText("tinyGlyph · $version")
+            }
+            Icon(painterResource(R.drawable.ic_chevron_down), contentDescription = null,
+                modifier = Modifier.rotate(-90f), tint = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
 }

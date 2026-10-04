@@ -114,7 +114,7 @@ def main():
         adb("shell", "settings", "put", "system", "font_scale", font)
         cases = [("MAIN", "CLAUDE", "data"), ("MAIN", "GPT", "empty"),
                  ("MAIN", "GPT", "error"), ("SETTINGS", "CLAUDE", "data"), ("GLYPH", "GPT", "data"),
-                 ("LOGIN_GPT", "GPT", "data"), ("LOGIN_MANUAL", "CLAUDE", "data")]
+                 ("LOGIN_GPT", "GPT", "data"), ("LOGIN_MANUAL", "CLAUDE", "data"), ("ABOUT", "GPT", "data")]
         if os.environ.get("PREVIEW_SCOPE") == "layout-fixes":
             cases = [("SETTINGS", "CLAUDE", "data"), ("GLYPH", "GPT", "data"), ("LOGIN_MANUAL", "CLAUDE", "data")]
         elif os.environ.get("PREVIEW_SCOPE") == "glyph":
@@ -124,6 +124,8 @@ def main():
             capture_widget_configuration(prefix)
         elif os.environ.get("PREVIEW_SCOPE") == "auth":
             cases = [("LOGIN_GPT", "GPT", "data"), ("LOGIN_GPT", "GPT", "pending"), ("LOGIN_GPT", "GPT", "browser"), ("LOGIN_GPT", "GPT", "error")]
+        elif os.environ.get("PREVIEW_SCOPE") == "about":
+            cases = [("SETTINGS", "CLAUDE", "data"), ("SETTINGS", "GPT", "data"), ("ABOUT", "GPT", "data")]
         for screen, provider, scenario in cases:
             open_page(screen, provider, scenario)
             name = f"{prefix}-{screen.lower()}-{provider.lower()}-{scenario}"
@@ -147,6 +149,22 @@ def main():
                 for index in range(1, (9 if font == "1.5" else 5) if screen == "GLYPH" else 3):
                     adb("shell", "input", "swipe", str(width // 2), str(height - 420), str(width // 2), "450", "450")
                     xml = capture(f"{name}-scroll-{index}")
+            if os.environ.get("PREVIEW_SCOPE") == "about":
+                if screen == "SETTINGS":
+                    tap_node(lambda n: n.get("text") == "О приложении")
+                    capture(f"{name}-opened-about")
+                version = re.search(r'versionName\s*=\s*"([^"]+)"', Path("app/build.gradle.kts").read_text()).group(1)
+                if not any(n.get("text") == "Версия " + version for n in ui_nodes()):
+                    raise RuntimeError("About page did not open or shows a different installed version")
+                for index in range(1, 3):
+                    adb("shell", "input", "swipe", str(width // 2), str(height - 420), str(width // 2), "450", "450")
+                    capture(f"{name}-about-scroll-{index}")
+                if not any(n.get("text") == "Релизы и обновления" for n in ui_nodes()):
+                    raise RuntimeError("About page links are inaccessible")
+                if screen == "SETTINGS":
+                    adb("shell", "input", "keyevent", "4")
+                    if not any(n.get("text") == "Настройки" for n in ui_nodes()):
+                        raise RuntimeError("Back from About did not return to Settings")
             if screen == "LOGIN_MANUAL":
                 open_page(screen, provider, scenario)
                 time.sleep(1)
@@ -165,7 +183,7 @@ def main():
                 adb("shell", "input", "tap", str((x1 + x2) // 2), str((y1 + y2) // 2))
                 capture(f"{name}-keyboard")
                 adb("shell", "input", "keyevent", "4")
-        for widget_height in ([] if os.environ.get("PREVIEW_SCOPE") in ("glyph", "auth") else [60, 130, 170, 230, 260]):
+        for widget_height in ([] if os.environ.get("PREVIEW_SCOPE") in ("glyph", "auth", "about") else [60, 130, 170, 230, 260]):
             for provider in (["GPT"] if os.environ.get("PREVIEW_SCOPE") == "layout-fixes" else ["CLAUDE", "GPT"]):
                 open_page("WIDGET", provider, width=280, height=widget_height)
                 capture(f"{prefix}-widget-{provider.lower()}-{widget_height}")

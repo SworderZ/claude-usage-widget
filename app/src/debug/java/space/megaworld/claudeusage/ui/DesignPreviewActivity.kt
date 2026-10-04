@@ -49,6 +49,7 @@ class DesignPreviewActivity : ComponentActivity() {
             var screen by remember { mutableStateOf(runCatching { Screen.valueOf(page) }.getOrDefault(Screen.MAIN)) }
             ClaudeUsageTheme(state.provider) {
                 when (page) {
+                    "ABOUT" -> AboutContent(installedVersionName(this@DesignPreviewActivity), { finish() }, {})
                     "WIDGET" -> WidgetPreview(state, intent.getIntExtra("width", 320), intent.getIntExtra("height", 170))
                     "LOGIN_GPT" -> {
                         val sample = remember { DeviceAuthorization("preview", "ABCD-1234", 5000, now + 900_000) }

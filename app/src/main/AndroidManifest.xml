@@ -71,6 +71,8 @@
         <activity android:name=".ui.OpenAiLoginActivity"
             android:windowSoftInputMode="adjustResize" android:exported="false" android:label="Подключить GPT" />
 
+        <activity android:name=".ui.AboutActivity" android:exported="false" android:label="О приложении" />
+
         <activity android:name=".ui.OpenAiLoginReturnActivity" android:exported="true" android:noHistory="true">
             <intent-filter>
                 <action android:name="android.intent.action.VIEW" />
