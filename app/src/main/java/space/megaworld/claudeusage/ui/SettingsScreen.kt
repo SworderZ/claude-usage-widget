@@ -29,8 +29,8 @@ fun SettingsScreen(state: UsageState, busy: Boolean,
         ScreenColumn(padding) {
             BusyLine(busy)
             SectionCard {
-                Text("ИИ в виджете", style = MaterialTheme.typography.titleMedium)
-                SupportingText("Выберите источник для рабочего стола. На вкладке «Лимиты» можно смотреть другой аккаунт.")
+                Text("ИИ для новых виджетов", style = MaterialTheme.typography.titleMedium)
+                SupportingText("Выбор по умолчанию. У каждого виджета свои лимиты: источник можно изменить через его шестерёнку или удержанием на рабочем столе.")
                 ProviderPicker(state.widgetProvider, !busy, onSelectWidgetProvider)
             }
             SectionCard {
@@ -40,7 +40,7 @@ fun SettingsScreen(state: UsageState, busy: Boolean,
                 SupportingText(if (state.refreshIntervalMinutes < 15)
                     "Частое обновление использует постоянное уведомление и расходует больше батареи."
                     else "Фоновое обновление без постоянного уведомления. Android может сдвинуть время запуска.")
-                SupportingText("Обновляются оба выбранных источника: для приложения и виджета.")
+                SupportingText("Обновляются лимиты в приложении и во всех ваших виджетах.")
                 ExactAlarmNotice(state.refreshIntervalMinutes)
             }
             if (state.provider == UsageProvider.CLAUDE) {

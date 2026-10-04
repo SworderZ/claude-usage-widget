@@ -2,6 +2,7 @@ package space.megaworld.claudeusage.widget
 
 import android.content.Context
 import android.content.Intent
+import android.appwidget.AppWidgetManager
 import kotlinx.coroutines.flow.first
 import space.megaworld.claudeusage.data.UsageProvider
 import space.megaworld.claudeusage.ui.ProviderColors
@@ -21,6 +22,7 @@ import androidx.glance.LocalSize
 import androidx.glance.appwidget.action.actionStartActivity
 import androidx.glance.action.clickable
 import androidx.glance.appwidget.GlanceAppWidget
+import androidx.glance.appwidget.GlanceAppWidgetManager
 import androidx.glance.appwidget.SizeMode
 import androidx.glance.appwidget.action.actionRunCallback
 import androidx.glance.appwidget.provideContent
@@ -47,6 +49,7 @@ import space.megaworld.claudeusage.data.UsageState
 import space.megaworld.claudeusage.data.UsageStatus
 import space.megaworld.claudeusage.data.UsageWindow
 import space.megaworld.claudeusage.ui.MainActivity
+import space.megaworld.claudeusage.ui.WidgetConfigurationActivity
 import space.megaworld.claudeusage.ui.UsageFormat
 import space.megaworld.claudeusage.ui.UsageLevel
 
@@ -62,14 +65,22 @@ class UsageWidget : GlanceAppWidget() {
     override val sizeMode: SizeMode = SizeMode.Exact
 
     override suspend fun provideGlance(context: Context, id: GlanceId) {
-        val repository = AppGraph.get(context).usageRepository
+        val graph = AppGraph.get(context)
+        val appWidgetId = GlanceAppWidgetManager(context).getAppWidgetId(id)
+        graph.settingsStore.initializeWidgetProviders(intArrayOf(appWidgetId))
+        val widgetState = graph.usageRepository.widgetState(appWidgetId)
         // Начальное значение читаем до provideContent, иначе виджет моргнёт
         // состоянием «не авторизован» на первом кадре.
-        val initial = repository.widgetState.first()
+        val initial = widgetState.first()
         provideContent {
-            val state by repository.widgetState.collectAsState(initial = initial)
-            WidgetBody(state)
+            val state by widgetState.collectAsState(initial = initial)
+            WidgetBody(state, appWidgetId)
         }
+    }
+
+    override suspend fun onDelete(context: Context, glanceId: GlanceId) {
+        AppGraph.get(context).settingsStore.removeWidgetProvider(
+            GlanceAppWidgetManager(context).getAppWidgetId(glanceId))
     }
 }
 
@@ -146,7 +157,7 @@ private fun metricsFor(height: Dp): Metrics = when {
 }
 
 @Composable
-internal fun WidgetBody(state: UsageState) {
+internal fun WidgetBody(state: UsageState, appWidgetId: Int? = null) {
     val size = LocalSize.current
     val fontScale = androidx.glance.LocalContext.current.resources.configuration.fontScale.coerceAtLeast(1f)
     val m = metricsFor((size.height.value / fontScale).dp)
@@ -167,9 +178,20 @@ internal fun WidgetBody(state: UsageState) {
                 }
             ),
     ) {
-        if (!m.header) Text(state.provider.displayLabel(), style = TextStyle(color = ColorProvider(ProviderColors.accent(state.provider)), fontSize = 10.sp))
+        if (!m.header) {
+            Row(modifier = GlanceModifier.fillMaxWidth().let {
+                if (appWidgetId != null) it.clickable(configurationAction(appWidgetId)) else it
+            }, verticalAlignment = Alignment.CenterVertically) {
+                Text(state.provider.displayLabel(), modifier = GlanceModifier.defaultWeight(),
+                    style = TextStyle(color = ColorProvider(ProviderColors.accent(state.provider)), fontSize = 10.sp))
+                if (appWidgetId != null) Image(ImageProvider(R.drawable.ic_settings),
+                    contentDescription = "Настроить этот виджет",
+                    colorFilter = ColorFilter.tint(ColorProvider(ProviderColors.accent(state.provider))),
+                    modifier = GlanceModifier.size(12.dp))
+            }
+        }
         if (m.header) {
-            Header(m, state.provider)
+            Header(m, state.provider, appWidgetId)
             Spacer(modifier = GlanceModifier.height(m.headerGap))
         }
 
@@ -200,7 +222,7 @@ internal fun WidgetBody(state: UsageState) {
 }
 
 @Composable
-private fun Header(m: Metrics, provider: UsageProvider) {
+private fun Header(m: Metrics, provider: UsageProvider, appWidgetId: Int?) {
     Row(
         modifier = GlanceModifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically,
@@ -225,6 +247,14 @@ private fun Header(m: Metrics, provider: UsageProvider) {
                 maxLines = 1,
             )
         }
+        if (appWidgetId != null) {
+            Box(modifier = GlanceModifier.padding(REFRESH_TOUCH_PADDING)
+                .clickable(configurationAction(appWidgetId)), contentAlignment = Alignment.Center) {
+                Image(ImageProvider(R.drawable.ic_settings), contentDescription = "Настроить этот виджет",
+                    colorFilter = ColorFilter.tint(ColorProvider(ProviderColors.accent(provider))),
+                    modifier = GlanceModifier.size(m.headerIcon))
+            }
+        }
         // Отступ задаётся внутри кликабельного Box: он входит в границы вида, поэтому
         // увеличивает именно область нажатия, а не просто просвет вокруг иконки.
         Box(
@@ -242,6 +272,12 @@ private fun Header(m: Metrics, provider: UsageProvider) {
         }
     }
 }
+
+@Composable
+private fun configurationAction(appWidgetId: Int) = actionStartActivity(
+    Intent(androidx.glance.LocalContext.current, WidgetConfigurationActivity::class.java)
+        .putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, appWidgetId)
+        .setData(android.net.Uri.parse("tinyglyph://widget/$appWidgetId")))
 
 @Composable
 private fun UsageTile(

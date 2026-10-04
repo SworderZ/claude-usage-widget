@@ -88,7 +88,7 @@ class DesignPreviewActivity : ComponentActivity() {
 
 private class PreviewWidget(private val state: UsageState) : GlanceAppWidget() {
     override suspend fun provideGlance(context: Context, id: GlanceId) {
-        provideContent { WidgetBody(state) }
+        provideContent { WidgetBody(state, appWidgetId = 1) }
     }
 }
 

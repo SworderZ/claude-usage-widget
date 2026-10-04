@@ -6,7 +6,7 @@ on:
       scope:
         description: Screens to capture
         type: choice
-        options: [all, layout-fixes, glyph]
+        options: [all, layout-fixes, glyph, widgets]
         default: all
 
 permissions:

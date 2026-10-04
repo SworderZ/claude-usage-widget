@@ -36,6 +36,80 @@ class SettingsStoreTest {
     @get:Rule val temporaryFolder = TemporaryFolder()
 
     @Test
+    fun `two widgets retain independent providers when the app and default change`() = runTest {
+        withStore { settings, _ ->
+            settings.setWidgetProvider(11, UsageProvider.CLAUDE)
+            settings.setWidgetProvider(22, UsageProvider.CODEX)
+            settings.setProvider(UsageProvider.CODEX)
+            settings.setWidgetProvider(UsageProvider.CODEX)
+            assertEquals(UsageProvider.CLAUDE, settings.widgetProvider(11).first())
+            assertEquals(UsageProvider.CODEX, settings.widgetProvider(22).first())
+            settings.setWidgetProvider(22, UsageProvider.CLAUDE)
+            assertEquals(UsageProvider.CLAUDE, settings.widgetProvider(11).first())
+            assertEquals(UsageProvider.CLAUDE, settings.widgetProvider(22).first())
+            assertEquals(UsageProvider.CODEX, settings.provider.first())
+            assertEquals(UsageProvider.CODEX, settings.widgetProvider.first())
+        }
+    }
+
+    @Test
+    fun `legacy widgets keep the shared GPT choice after migration and a new default`() = runTest {
+        withStore { settings, dataStore ->
+            dataStore.edit { it[stringPreferencesKey("usage_provider")] = UsageProvider.CODEX.name }
+            settings.initializeWidgetProviders(intArrayOf(11, 22))
+            settings.setProvider(UsageProvider.CLAUDE)
+            settings.setWidgetProvider(UsageProvider.CLAUDE)
+            settings.initializeWidgetProviders(intArrayOf(11, 22, 33))
+            assertEquals(UsageProvider.CODEX, settings.widgetProvider(11).first())
+            assertEquals(UsageProvider.CODEX, settings.widgetProvider(22).first())
+            assertEquals(UsageProvider.CLAUDE, settings.widgetProvider(33).first())
+        }
+    }
+
+    @Test
+    fun `widget choices survive process restart and clearing Claude settings`() = runTest {
+        val file = File(temporaryFolder.root, "widgets.preferences_pb")
+        withStore(file) { settings, _ ->
+            settings.setWidgetProvider(11, UsageProvider.CLAUDE)
+            settings.setWidgetProvider(22, UsageProvider.CODEX)
+            settings.clear()
+        }
+        withStore(file) { settings, _ ->
+            assertEquals(UsageProvider.CLAUDE, settings.widgetProvider(11).first())
+            assertEquals(UsageProvider.CODEX, settings.widgetProvider(22).first())
+        }
+    }
+
+    @Test
+    fun `background refresh includes widget sources once and forgets deleted widgets`() = runTest {
+        withStore { settings, _ ->
+            settings.setWidgetProvider(11, UsageProvider.CODEX)
+            settings.setWidgetProvider(22, UsageProvider.CODEX)
+            assertEquals(listOf(UsageProvider.CLAUDE, UsageProvider.CODEX), settings.displayedProviders())
+            settings.removeWidgetProvider(11)
+            assertEquals(listOf(UsageProvider.CLAUDE, UsageProvider.CODEX), settings.displayedProviders())
+            settings.removeWidgetProvider(22)
+            assertEquals(listOf(UsageProvider.CLAUDE), settings.displayedProviders())
+            settings.setWidgetProvider(22, UsageProvider.CLAUDE)
+            assertEquals(UsageProvider.CLAUDE, settings.widgetProvider(22).first())
+        }
+    }
+
+    @Test
+    fun `invalid widget data falls back without replacing another explicit choice`() = runTest {
+        withStore { settings, dataStore ->
+            settings.setWidgetProvider(UsageProvider.CODEX)
+            settings.setWidgetProvider(11, UsageProvider.CLAUDE)
+            dataStore.edit { it[stringPreferencesKey("widget_provider_22")] = "invalid" }
+            settings.initializeWidgetProviders(intArrayOf(0, -1, 11, 22))
+            assertEquals(UsageProvider.CLAUDE, settings.widgetProvider(11).first())
+            assertEquals(UsageProvider.CODEX, settings.widgetProvider(22).first())
+            assertTrue(runCatching { settings.setWidgetProvider(0, UsageProvider.CLAUDE) }.isFailure)
+            assertTrue(runCatching { settings.setWidgetProvider(-1, UsageProvider.CLAUDE) }.isFailure)
+        }
+    }
+
+    @Test
     fun `browsing another provider does not change the default widget`() = runTest {
         withStore { settings, _ ->
             assertEquals(UsageProvider.CLAUDE, settings.widgetProvider.first())

@@ -11,7 +11,7 @@ and time with the screen off.
 ## Features
 
 - Home-screen widgets show five-hour and weekly usage, reset times, and elapsed time.
-- Choose the widget's AI provider independently from the account open in the app.
+- Choose Claude or GPT independently for each widget and keep both on the home screen.
 - Claude uses orange accents; GPT uses white accents on a dark background.
 - Assign rain probability, screen-off time, or Off independently to channels A and B.
 - Use strip C for AI usage, rain probability, or Off.
@@ -29,8 +29,12 @@ Choose Claude on the Limits tab and sign in. If the embedded sign-in page does n
 work, use the manual-key option to open Claude in a browser and paste a `sessionKey`
 or cookie header from your signed-in session.
 
-Add the widget from your launcher's widget picker. Set its provider under Settings.
-Tap the refresh button to update it; tap the provider name to open that account.
+Add the widget from your launcher's widget picker and choose its provider. Each
+widget remembers its own choice. Use its settings icon to change the source later,
+or long-press the widget and choose the launcher's configuration option. The
+provider in app Settings is a default for new widgets; existing widgets keep their
+choice. Tap refresh to update that provider; in larger widgets, tap the provider
+name to open that account.
 
 ### Connect Codex
 

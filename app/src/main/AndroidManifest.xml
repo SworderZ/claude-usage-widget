@@ -60,6 +60,14 @@
             android:exported="false"
             android:label="@string/login_title" />
 
+        <activity android:name=".ui.WidgetConfigurationActivity"
+            android:exported="true" android:windowSoftInputMode="adjustResize"
+            android:label="Настройка виджета">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_CONFIGURE" />
+            </intent-filter>
+        </activity>
+
         <activity android:name=".ui.OpenAiLoginActivity"
             android:windowSoftInputMode="adjustResize" android:exported="false" android:label="Подключить Codex" />
 

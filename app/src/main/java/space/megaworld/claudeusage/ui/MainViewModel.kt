@@ -1,6 +1,8 @@
 package space.megaworld.claudeusage.ui
 
 import android.app.Application
+import android.appwidget.AppWidgetManager
+import android.content.ComponentName
 import android.webkit.CookieManager
 import androidx.glance.appwidget.updateAll
 import androidx.lifecycle.AndroidViewModel
@@ -23,6 +25,7 @@ import space.megaworld.claudeusage.data.UsageProvider
 import space.megaworld.claudeusage.data.UsageState
 import space.megaworld.claudeusage.data.WeatherPlace
 import space.megaworld.claudeusage.widget.UsageWidget
+import space.megaworld.claudeusage.widget.UsageWidgetReceiver
 import space.megaworld.claudeusage.worker.UsageRefreshWorker
 
 class MainViewModel(application: Application) : AndroidViewModel(application) {
@@ -74,6 +77,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun setWidgetProvider(provider: UsageProvider) = runBusy {
+        val ids = AppWidgetManager.getInstance(getApplication()).getAppWidgetIds(
+            ComponentName(getApplication(), UsageWidgetReceiver::class.java))
+        graph.settingsStore.initializeWidgetProviders(ids)
         graph.usageRepository.setWidgetProvider(provider)
         UsageWidget().updateAll(getApplication())
         UsageRefreshWorker.ensureScheduled(getApplication(), graph.settingsStore.currentIntervalMinutes())

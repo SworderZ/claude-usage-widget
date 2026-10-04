@@ -10,6 +10,7 @@ import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.encodeToString
@@ -39,6 +40,51 @@ class SettingsStore internal constructor(private val dataStore: DataStore<Prefer
 
     suspend fun setWidgetProvider(provider: UsageProvider) {
         dataStore.edit { it[KEY_WIDGET_PROVIDER] = provider.name }
+    }
+
+    fun widgetProvider(appWidgetId: Int): Flow<UsageProvider> = dataStore.data.map { prefs ->
+        readProvider(prefs[widgetProviderKey(appWidgetId)]) ?: defaultWidgetProvider(prefs)
+    }.distinctUntilChanged()
+
+    suspend fun setWidgetProvider(appWidgetId: Int, provider: UsageProvider) {
+        dataStore.edit { it[widgetProviderKey(appWidgetId)] = provider.name }
+    }
+
+    /** Pin the old shared choice once, so changing a default cannot switch existing widgets. */
+    suspend fun initializeWidgetProviders(appWidgetIds: IntArray) {
+        if (appWidgetIds.isEmpty()) return
+        dataStore.edit { prefs ->
+            val previous = defaultWidgetProvider(prefs)
+            appWidgetIds.filter { it > 0 }.forEach { id ->
+                val key = widgetProviderKey(id)
+                if (readProvider(prefs[key]) == null) prefs[key] = previous.name
+            }
+        }
+    }
+
+    suspend fun removeWidgetProvider(appWidgetId: Int) {
+        dataStore.edit { it.remove(widgetProviderKey(appWidgetId)) }
+    }
+
+    /** Every displayed source is refreshed once, even when several widgets use it. */
+    suspend fun displayedProviders(): List<UsageProvider> {
+        val prefs = dataStore.data.first()
+        val widgets = prefs.asMap().mapNotNull { (key, value) ->
+            if (key.name.startsWith(WIDGET_PROVIDER_PREFIX)) readProvider(value as? String) else null
+        }
+        return (listOf(readProvider(prefs[KEY_PROVIDER]) ?: UsageProvider.CLAUDE,
+            defaultWidgetProvider(prefs)) + widgets).distinct()
+    }
+
+    private fun defaultWidgetProvider(prefs: Preferences): UsageProvider =
+        readProvider(prefs[KEY_WIDGET_PROVIDER] ?: prefs[KEY_PROVIDER]) ?: UsageProvider.CLAUDE
+
+    private fun readProvider(raw: String?): UsageProvider? =
+        raw?.let { runCatching { UsageProvider.valueOf(it) }.getOrNull() }
+
+    private fun widgetProviderKey(appWidgetId: Int): Preferences.Key<String> {
+        require(appWidgetId > 0) { "A valid widget ID is required" }
+        return stringPreferencesKey("$WIDGET_PROVIDER_PREFIX$appWidgetId")
     }
 
     val organizationUuid: Flow<String?> =
@@ -235,6 +281,7 @@ class SettingsStore internal constructor(private val dataStore: DataStore<Prefer
          */
         val ALLOWED_INTERVALS = listOf(5, 10, 15, 30, 60)
         const val DEFAULT_INTERVAL_MINUTES = 30
+        private const val WIDGET_PROVIDER_PREFIX = "widget_provider_"
 
         private val KEY_WIDGET_PROVIDER = stringPreferencesKey("widget_provider")
         private val KEY_PROVIDER = stringPreferencesKey("usage_provider")

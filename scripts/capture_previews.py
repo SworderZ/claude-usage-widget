@@ -41,6 +41,62 @@ def open_page(screen, provider="CLAUDE", scenario="data", width=280, height=170)
         "--ei", "width", str(width), "--ei", "height", str(height))
 
 
+def ui_nodes():
+    adb("shell", "uiautomator", "dump", "/sdcard/tinyglyph-ui.xml")
+    return list(ET.fromstring(adb("exec-out", "cat", "/sdcard/tinyglyph-ui.xml")).iter("node"))
+
+
+def tap_node(predicate, index=0):
+    nodes = [node for node in ui_nodes() if predicate(node)]
+    if len(nodes) <= index:
+        raise RuntimeError("Widget configuration control is missing")
+    x1, y1, x2, y2 = map(int, re.findall(r"\d+", nodes[index].attrib["bounds"]))
+    adb("shell", "input", "tap", str((x1 + x2) // 2), str((y1 + y2) // 2))
+    time.sleep(1)
+
+
+def assert_sources(first, second):
+    expected = f"widget-providers:{first},{second};app:CLAUDE"
+    for attempt in range(10):
+        if any(n.get("content-desc") == expected for n in ui_nodes()):
+            return
+        time.sleep(1)
+    raise RuntimeError(f"Per-widget selection changed another widget or the app: expected {expected}")
+
+
+def capture_widget_configuration(prefix):
+    adb("shell", "appwidget", "grantbind", "--package", PACKAGE, "--user", "0")
+    host = f"{PACKAGE}/.ui.WidgetHostPreviewActivity"
+    adb("shell", "am", "start", "-W", "-S", "-n", host, "--ez", "reset", "true")
+    assert_sources("CLAUDE", "CODEX")
+    time.sleep(3)
+    capture(f"{prefix}-widgets-independent-initial")
+    gear = lambda n: n.get("content-desc") == "Настроить этот виджет"
+    text = lambda value: lambda n: n.get("text", "").split("\n")[0] == value
+    # Open each widget's own PendingIntent; their destinations must stay distinct.
+    tap_node(gear, 0)
+    capture(f"{prefix}-widget-config-claude")
+    tap_node(text("GPT"))
+    tap_node(text("Сохранить"))
+    assert_sources("CODEX", "CODEX")
+    capture(f"{prefix}-widgets-first-changed")
+    tap_node(gear, 1)
+    capture(f"{prefix}-widget-config-gpt")
+    tap_node(text("Claude"))
+    tap_node(text("Сохранить"))
+    assert_sources("CODEX", "CLAUDE")
+    capture(f"{prefix}-widgets-second-changed")
+    tap_node(gear, 0)
+    tap_node(text("Claude"))
+    adb("shell", "input", "keyevent", "4")
+    assert_sources("CODEX", "CLAUDE")
+    # A draft choice must not survive cancellation, and saved choices survive a restart.
+    adb("shell", "am", "start", "-W", "-S", "-n", host)
+    assert_sources("CODEX", "CLAUDE")
+    capture(f"{prefix}-widgets-after-restart")
+    print("Verified independent configuration, cancellation, and process restart.", flush=True)
+
+
 def main():
     adb("logcat", "-c")
     adb("shell", "settings", "put", "global", "window_animation_scale", "0")
@@ -57,6 +113,9 @@ def main():
             cases = [("SETTINGS", "CLAUDE", "data"), ("GLYPH", "GPT", "data"), ("LOGIN_MANUAL", "CLAUDE", "data")]
         elif os.environ.get("PREVIEW_SCOPE") == "glyph":
             cases = [("GLYPH", "GPT", "data")]
+        elif os.environ.get("PREVIEW_SCOPE") == "widgets":
+            cases = []
+            capture_widget_configuration(prefix)
         for screen, provider, scenario in cases:
             open_page(screen, provider, scenario)
             name = f"{prefix}-{screen.lower()}-{provider.lower()}-{scenario}"

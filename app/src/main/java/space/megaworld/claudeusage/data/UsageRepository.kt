@@ -43,7 +43,7 @@ class UsageRepository(
     }
 
     val state: Flow<UsageState> = observeState(settingsStore.provider)
-    val widgetState: Flow<UsageState> = observeState(settingsStore.widgetProvider)
+    fun widgetState(appWidgetId: Int): Flow<UsageState> = observeState(settingsStore.widgetProvider(appWidgetId))
 
     private fun observeState(source: Flow<UsageProvider>): Flow<UsageState> =
         source.flatMapLatest { provider ->
@@ -128,7 +128,7 @@ class UsageRepository(
     suspend fun refresh(): RefreshResult = refresh(settingsStore.provider.first())
 
     suspend fun refreshDisplayedSources(): List<RefreshResult> {
-        val targets = listOf(settingsStore.provider.first(), settingsStore.widgetProvider.first()).distinct()
+        val targets = settingsStore.displayedProviders()
         return targets.map { refresh(it) }
     }
 
