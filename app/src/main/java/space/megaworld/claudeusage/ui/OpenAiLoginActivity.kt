@@ -72,7 +72,7 @@ internal fun OpenAiLoginContent(
             BusyLine(busy)
             if (authorization == null) {
                 SectionCard {
-                    Text("Войти через ChatGPT", style = MaterialTheme.typography.titleMedium)
+                    Text("Аккаунт ChatGPT", style = MaterialTheme.typography.titleMedium)
                     SupportingText("Получите одноразовый код и подтвердите вход в браузере. Компьютер и перенос файлов не нужны.")
                     Button(onClick = onStartLogin, enabled = !busy,
                         modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) { Text("Войти через ChatGPT") }
