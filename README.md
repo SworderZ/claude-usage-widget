@@ -6,7 +6,7 @@ tinyGlyph shows Claude and Codex usage in Android home-screen widgets. On Nothin
 Phone (2a) and Phone (2a) Plus, the Glyph lights also show usage, rain probability,
 and time with the screen off.
 
-[Download the latest version](https://github.com/SworderZ/claude-usage-widget/releases/latest)
+[Download the latest version](https://github.com/SworderZ/tinyglyph/releases/latest)
 
 ## Features
 

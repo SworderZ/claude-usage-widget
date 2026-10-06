@@ -77,11 +77,11 @@ internal fun AboutContent(version: String, onBack: () -> Unit, onOpenLink: (Stri
             }
             SectionCard {
                 Text("Проект", style = MaterialTheme.typography.titleMedium)
-                Button(onClick = { onOpenLink("https://github.com/SworderZ/claude-usage-widget/releases/latest") },
+                Button(onClick = { onOpenLink("https://github.com/SworderZ/tinyglyph/releases/latest") },
                     modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) {
                     Text("Релизы и обновления", textAlign = TextAlign.Center)
                 }
-                OutlinedButton(onClick = { onOpenLink("https://github.com/SworderZ/claude-usage-widget") },
+                OutlinedButton(onClick = { onOpenLink("https://github.com/SworderZ/tinyglyph") },
                     modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
                     Text("Исходный код на GitHub", textAlign = TextAlign.Center)
                 }
